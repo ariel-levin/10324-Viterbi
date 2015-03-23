@@ -6,20 +6,21 @@
 #include <math.h>
 #include <string.h>
 #include <mpi.h>
+#include <omp.h>
 #include "iostream"
 
 using namespace std;
 
 
-#define NUM_OF_STATES 3			// number of states, default: 1000
-#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
+#define NUM_OF_STATES 1000			// number of states, default: 1000
+#define NUM_OF_OBSRV 1000			// number of time slices, default: 30000
 
 
 static const bool	GENERATE_ZEROES = true;
-static const int	ZERO_EVERY = 1019;
-static const bool	TEST_VALUES = true;
-static const bool	WITH_LOGS = false;
-static const bool	PRINT_OBSRV_STATUS = false;
+static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
+static const bool	TEST_VALUES = false;
+static const bool	WITH_LOGS = true;
+static const bool	PRINT_OBSRV_STATUS = true;
 
 
 typedef struct STATE
@@ -130,16 +131,20 @@ void printArray(int arr[], int size)
 	printf("\n\n");
 }
 
-/* generate random array values between min and max */
-void generateArray(float arr[], int size, int min, int max)
+/* generate random array values between 0 and 1 */
+void generateArray(float arr[], int size)
 {
-	int i;
-	for (i = 0; i < size; i++)
+	int next_zero = rand() % MAX_ZERO_RANGE;
+
+	for (int i = 0; i < size; i++)
 	{
-		if (GENERATE_ZEROES && i % ZERO_EVERY == 0 && i != 0)
+		if (GENERATE_ZEROES && i == next_zero)
+		{
 			arr[i] = 0;
+			next_zero = (i+1) + (rand() % MAX_ZERO_RANGE);
+		}
 		else
-			arr[i] = (float)min + ((float)rand() / RAND_MAX)*((float)(max - min));
+			arr[i] = (float)rand() / RAND_MAX;
 	}
 }
 
@@ -177,15 +182,15 @@ STATE** allocateStateMatrix(int rows, int cols)
 	return mat;
 }
 
-/* generate random matrix values between min and max, with number of rows and cols received */
-void generateMatrix(float *mat[], int rows, int cols, int min, int max)
+/* generate random matrix values between 0 and 1, with number of rows and cols received */
+void generateMatrix(float *mat[], int rows, int cols)
 {
 	int i, j;
 	for (i = 0; i < rows; i++)
 	{
 		for (j = 0; j < cols; j++)
 		{
-			mat[i][j] = (float)min + ((float)rand() / RAND_MAX)*((float)(max - min));
+			mat[i][j] = (float)rand() / RAND_MAX;
 		}
 	}
 }
@@ -281,8 +286,7 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	ab[1][0] = 50;		ab[1][1] = 5;
 	ab[2][0] = 5;		ab[2][1] = 8;
 
-	//obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
-	obsrv[0] = 0;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
 }
 
 int getPathLength(MAX_STATE *arr, int i)
@@ -317,8 +321,6 @@ int* getPath(MAX_STATE *arr, int i, STATE *mat[])
 
 void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 {
-	int end, start;
-
 	for (int i = 0; i < size; i++)
 	{
 		STATE max_state = arr[i].state;
@@ -350,7 +352,6 @@ int main(int argc, char* argv[])
 	int			range[2], state_calc_num;
 	int			rank, mpi_proc_num, max_idx = 0, *max_states_idx;
 	float		**trans, **ab, *obsrv, *emission;
-	bool		zero_flag;
 	STATE		**mat, *current, *next;
 	MAX_STATE	*max_states_arr;
 
@@ -405,10 +406,10 @@ int main(int argc, char* argv[])
 			testValues(trans, ab, obsrv);
 		else
 		{
-			generateMatrix(trans, NUM_OF_STATES, NUM_OF_STATES, 0, 1);
+			generateMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
 			normalizeMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
-			generateMatrix(ab, NUM_OF_STATES, 2, 0, 1);
-			generateArray(obsrv, NUM_OF_OBSRV, 0, 1);
+			generateMatrix(ab, NUM_OF_STATES, 2);
+			generateArray(obsrv, NUM_OF_OBSRV);
 		}
 
 		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
@@ -441,7 +442,7 @@ int main(int argc, char* argv[])
 
 		int max_states_num = 0;
 
-		zero_flag = true;
+		bool zero_flag = true;
 
 		double startTime = MPI_Wtime();
 
@@ -452,7 +453,7 @@ int main(int argc, char* argv[])
 				for (int j = 0; j < NUM_OF_STATES; j++)
 				{
 					if (WITH_LOGS)
-						mat[i][j].prob = 0;			// log(1) = 0
+						mat[i][j].prob = 0;		// log(1) = 0
 					else
 						mat[i][j].prob = 1;
 
@@ -491,9 +492,12 @@ int main(int argc, char* argv[])
 			}
 			else		// finding current max state
 			{
-				
-				// signal that obsrvation is zero / the end
-				emission[0] = -1;
+
+				if (i != NUM_OF_OBSRV - 1) 
+					emission[0] = -1;	// signal that obsrvation is zero
+				else
+					emission[0] = -2;	// signal that's the last obsrvation
+
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -514,15 +518,14 @@ int main(int argc, char* argv[])
 
 				max_states_num++;
 				max_states_arr = (MAX_STATE*)realloc(max_states_arr, (max_states_num + 1) * sizeof(MAX_STATE));
-				max_states_arr[max_states_num-1].obsrv = i;
-				max_states_arr[max_states_num-1].state_num = max_idx;
-				max_states_arr[max_states_num-1].state = mat[i][max_idx];
-
-				zero_flag = true;
+				max_states_arr[max_states_num - 1].obsrv = i;
+				max_states_arr[max_states_num - 1].state_num = max_idx;
+				max_states_arr[max_states_num - 1].state = mat[i][max_idx];
 
 				//printf("\nrank %d observation %d >> max_state #%d , prob = %f\n", rank, i, 
 				//	max_states_arr[max_states_num - 1].state_num, max_states_arr[max_states_num - 1].state.prob);
-				
+
+				zero_flag = true;
 			}
 
 
@@ -556,14 +559,14 @@ int main(int argc, char* argv[])
 		current = (STATE*)malloc(NUM_OF_STATES * sizeof(STATE));
 		next = (STATE*)malloc(state_calc_num * sizeof(STATE));
 
+		bool more_calc = true;
 
-		for (int i = 0; i < NUM_OF_OBSRV; i++)
+		while (more_calc)
 		{
-
 			MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 			MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-			if (emission[0] != -1)
+			if (emission[0] != -1 && emission[0] != -2)		// normal observation
 			{
 
 				for (int m = 0; m < state_calc_num; m++)
@@ -614,6 +617,9 @@ int main(int argc, char* argv[])
 				//printf("\nrank %d Observation %d >> sending max: %f , index: %d\n", rank, i, current[max_idx].prob, max_idx);
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+				if (emission[0] == -2)
+					more_calc = false;
 			}
 
 
