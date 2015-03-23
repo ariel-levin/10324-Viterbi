@@ -1,0 +1,198 @@
+1000 x 30000 >> only MPI
+
+...
+...
+...
+Finished observation 29957...
+Finished observation 29958...
+Finished observation 29959...
+Finished observation 29960...
+Finished observation 29961...
+Finished observation 29962...
+Finished observation 29963...
+Finished observation 29964...
+Finished observation 29965...
+Finished observation 29966...
+Finished observation 29967...
+Finished observation 29968...
+Finished observation 29969...
+Finished observation 29970...
+Finished observation 29971...
+Finished observation 29972...
+Finished observation 29973...
+Finished observation 29974...
+Finished observation 29975...
+Finished observation 29976...
+Finished observation 29977...
+Finished observation 29978...
+Finished observation 29979...
+Finished observation 29980...
+Finished observation 29981...
+Finished observation 29982...
+Finished observation 29983...
+Finished observation 29984...
+Finished observation 29985...
+Finished observation 29986...
+Finished observation 29987...
+Finished observation 29988...
+Finished observation 29989...
+Finished observation 29990...
+Finished observation 29991...
+Finished observation 29992...
+Finished observation 29993...
+Finished observation 29994...
+Finished observation 29995...
+Finished observation 29996...
+Finished observation 29997...
+Finished observation 29998...
+Finished observation 29999...
+
+rank 6 >> DONE
+
+
+rank 2 >> DONE
+
+
+rank 8 >> DONE
+
+
+rank 5 >> DONE
+
+
+rank 3 >> DONE
+
+
+rank 4 >> DONE
+
+
+rank 1 >> DONE
+
+
+rank 7 >> DONE
+
+
+Max State #1 - Observation 1019:
+State 194 >> Final Prob = -6.388180e+003
+Path: 906 -> 424 -> ... -> 194 -> 194
+
+Max State #2 - Observation 2038:
+State 854 >> Final Prob = -6.380512e+003
+Path: 231 -> 948 -> ... -> 220 -> 854
+
+Max State #3 - Observation 3057:
+State 505 >> Final Prob = -6.381497e+003
+Path: 194 -> 194 -> ... -> 472 -> 505
+
+Max State #4 - Observation 4076:
+State 41 >> Final Prob = -6.381771e+003
+Path: 424 -> 991 -> ... -> 843 -> 41
+
+Max State #5 - Observation 5095:
+State 72 >> Final Prob = -6.381510e+003
+Path: 781 -> 781 -> ... -> 323 -> 72
+
+Max State #6 - Observation 6114:
+State 659 >> Final Prob = -6.381337e+003
+Path: 327 -> 220 -> ... -> 302 -> 659
+
+Max State #7 - Observation 7133:
+State 914 >> Final Prob = -6.381456e+003
+Path: 781 -> 376 -> ... -> 411 -> 914
+
+Max State #8 - Observation 8152:
+State 163 >> Final Prob = -6.381835e+003
+Path: 340 -> 161 -> ... -> 872 -> 163
+
+Max State #9 - Observation 9171:
+State 194 >> Final Prob = -6.380688e+003
+Path: 424 -> 991 -> ... -> 194 -> 194
+
+Max State #10 - Observation 10190:
+State 371 >> Final Prob = -6.381697e+003
+Path: 280 -> 154 -> ... -> 231 -> 371
+
+Max State #11 - Observation 11209:
+State 442 >> Final Prob = -6.382211e+003
+Path: 424 -> 644 -> ... -> 991 -> 442
+
+Max State #12 - Observation 12228:
+State 798 >> Final Prob = -6.380701e+003
+Path: 194 -> 194 -> ... -> 589 -> 798
+
+Max State #13 - Observation 13247:
+State 163 >> Final Prob = -6.382002e+003
+Path: 721 -> 869 -> ... -> 872 -> 163
+
+Max State #14 - Observation 14266:
+State 770 >> Final Prob = -6.380768e+003
+Path: 327 -> 146 -> ... -> 307 -> 770
+
+Max State #15 - Observation 15285:
+State 215 >> Final Prob = -6.382225e+003
+Path: 208 -> 402 -> ... -> 67 -> 215
+
+Max State #16 - Observation 16304:
+State 371 >> Final Prob = -6.379862e+003
+Path: 194 -> 194 -> ... -> 231 -> 371
+
+Max State #17 - Observation 17323:
+State 659 >> Final Prob = -6.380924e+003
+Path: 194 -> 194 -> ... -> 302 -> 659
+
+Max State #18 - Observation 18342:
+State 194 >> Final Prob = -6.381262e+003
+Path: 173 -> 721 -> ... -> 194 -> 194
+
+Max State #19 - Observation 19361:
+State 194 >> Final Prob = -6.380722e+003
+Path: 843 -> 402 -> ... -> 194 -> 194
+
+Max State #20 - Observation 20380:
+State 194 >> Final Prob = -6.381534e+003
+Path: 721 -> 869 -> ... -> 194 -> 194
+
+Max State #21 - Observation 21399:
+State 41 >> Final Prob = -6.381939e+003
+Path: 173 -> 721 -> ... -> 843 -> 41
+
+Max State #22 - Observation 22418:
+State 659 >> Final Prob = -6.381037e+003
+Path: 194 -> 194 -> ... -> 302 -> 659
+
+Max State #23 - Observation 23437:
+State 194 >> Final Prob = -6.381540e+003
+Path: 402 -> 161 -> ... -> 194 -> 194
+
+Max State #24 - Observation 24456:
+State 135 >> Final Prob = -6.382038e+003
+Path: 146 -> 424 -> ... -> 906 -> 135
+
+Max State #25 - Observation 25475:
+State 833 >> Final Prob = -6.381923e+003
+Path: 194 -> 194 -> ... -> 781 -> 833
+
+Max State #26 - Observation 26494:
+State 163 >> Final Prob = -6.380505e+003
+Path: 847 -> 749 -> ... -> 872 -> 163
+
+Max State #27 - Observation 27513:
+State 961 >> Final Prob = -6.380644e+003
+Path: 424 -> 991 -> ... -> 161 -> 961
+
+Max State #28 - Observation 28532:
+State 442 >> Final Prob = -6.381146e+003
+Path: 424 -> 991 -> ... -> 991 -> 442
+
+Max State #29 - Observation 29551:
+State 194 >> Final Prob = -6.381137e+003
+Path: 402 -> 340 -> ... -> 194 -> 194
+
+Max State #30 - Observation 29999:
+State 138 >> Final Prob = -2.801553e+003
+Path: 869 -> 869 -> ... -> 154 -> 138
+
+
+MPI measured time: 619.312107
+
+
+rank 0 >> DONE

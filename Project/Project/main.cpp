@@ -11,15 +11,15 @@
 using namespace std;
 
 
-#define NUM_OF_STATES 1000			// number of states, default: 1000
-#define NUM_OF_OBSRV 1000			// number of time slices, default: 30000
+#define NUM_OF_STATES 3			// number of states, default: 1000
+#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
 
 
 static const bool	GENERATE_ZEROES = true;
-static const int	ZERO_EVERY = 100;
-static const bool	TEST_VALUES = false;
-static const bool	WITH_LOGS = true;
-static const bool	PRINT_OBSRV_STATUS = true;
+static const int	ZERO_EVERY = 1019;
+static const bool	TEST_VALUES = true;
+static const bool	WITH_LOGS = false;
+static const bool	PRINT_OBSRV_STATUS = false;
 
 
 typedef struct STATE
@@ -75,15 +75,24 @@ int getMaxStateIndex(STATE arr[], int size)
 	return max;
 }
 
-void printPath(int path[], int size)
+void printPath(int path[], int len)
 {
 	printf("Path: ");
-	for (int i = 0; i < size; i++)
+
+	// if it's a small path print it all
+	if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
 	{
-		printf("%d", path[i]);
-		if (i < size - 1)
-			printf(" -> ");
-	}
+		for (int i = 0; i < len; i++)
+		{
+			printf("%d", path[i]);
+			if (i < len - 1)
+				printf(" -> ");
+		}
+
+	}	// else- print a part of it
+	else
+		printf("%d -> %d -> ... -> %d -> %d", path[0], path[1], path[len - 2], path[len - 1]);
+
 	printf("\n");
 }
 
@@ -272,7 +281,38 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	ab[1][0] = 50;		ab[1][1] = 5;
 	ab[2][0] = 5;		ab[2][1] = 8;
 
-	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+	//obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+	obsrv[0] = 0;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+}
+
+int getPathLength(MAX_STATE *arr, int i)
+{
+	int start, end = arr[i].obsrv;
+
+	if (i == 0)
+		start = 0;
+	else
+		start = arr[i - 1].obsrv + 1;
+
+	return end - start + 1;
+}
+
+int* getPath(MAX_STATE *arr, int i, STATE *mat[])
+{
+	STATE max_state = arr[i].state;
+	int o = arr[i].obsrv;
+
+	int len = getPathLength(arr, i);
+
+	int *path = (int*)calloc(len, sizeof(int));
+	path[len - 1] = arr[i].state_num;
+	for (int j = 2; j <= len; j++)
+	{
+		path[len - j] = max_state.parent;
+		max_state = mat[o + 1 - j][max_state.parent];
+	}
+
+	return path;
 }
 
 void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
@@ -281,41 +321,19 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 
 	for (int i = 0; i < size; i++)
 	{
-		int num = arr[i].state_num;
-
 		STATE max_state = arr[i].state;
 		printf("\nMax State #%d - Observation %d:\n", i + 1, arr[i].obsrv);
 		if (WITH_LOGS)
 		{
 			//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
-			printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+			printf("State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
 		}
 		else
-			printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+			printf("State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
 
 
-		// checking path
-		end = arr[i].obsrv;
-		if (i == 0)
-			start = 0;
-		else
-			start = arr[i - 1].obsrv + 1;
-
-		int path_len = end - start + 1;
-
-		int *path = (int*)calloc(path_len, sizeof(int));
-		path[path_len - 1] = num;
-		for (int j = 2; j <= path_len; j++)
-		{
-			path[path_len - j] = max_state.parent;
-			max_state = mat[end + 1 - j][max_state.parent];
-		}
-
-		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
-			printPath(path, path_len);
-		else
-			printf("Path: %d -> %d -> ... -> %d -> %d\n", path[0], path[1], path[path_len - 2], path[path_len - 1]);
-
+		int *path = getPath(arr, i, mat);
+		printPath(path, getPathLength(arr, i) );
 		free(path);
 	}
 }
@@ -522,9 +540,7 @@ int main(int argc, char* argv[])
 
 		}
 
-		
 		printAllMaxStates(mat, max_states_arr, max_states_num);
-
 
 		double endTime = MPI_Wtime();
 		printf("\n\nMPI measured time: %lf\n\n", endTime - startTime);
@@ -601,8 +617,6 @@ int main(int argc, char* argv[])
 			}
 
 
-
-
 		}
 
 
@@ -622,7 +636,7 @@ int main(int argc, char* argv[])
 
 	if (rank == 0)
 	{
-		freeMatrix(mat, NUM_OF_STATES);
+		freeMatrix(mat, NUM_OF_OBSRV);
 		free(max_states_arr);
 	}
 	else
