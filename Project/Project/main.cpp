@@ -11,14 +11,14 @@
 using namespace std;
 
 
-#define NUM_OF_STATES 1000			// number of states, default: 1000
-#define NUM_OF_OBSRV 1000			// number of time slices, default: 30000
+#define NUM_OF_STATES 5			// number of states, default: 1000
+#define NUM_OF_OBSRV 8			// number of time slices, default: 30000
 
 
-const bool GENERATE_ZEROES = false;
+const bool GENERATE_ZEROES = true;
 const bool TEST_VALUES = false;
-const bool WITH_LOGS = true;
-const bool PRINT_STATUS = true;
+const bool WITH_LOGS = false;
+const bool PRINT_OBSRV_STATUS = true;
 
 
 typedef struct STATE
@@ -27,6 +27,14 @@ typedef struct STATE
 	int		parent;
 
 } STATE;
+
+typedef struct MAX_STATE
+{
+	int		obsrv;
+	int		state_num;
+	STATE	state;
+
+} MAX_STATE;
 
 
 //cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int num_of_threads);
@@ -90,19 +98,6 @@ void printArray(STATE arr[], int size)
 	printf("\n");
 }
 
-/* generate random array values between min and max */
-void generateArray(float arr[], int size, int min, int max)
-{
-	int i;
-	for (i = 0; i < size; i++)
-	{
-		if (GENERATE_ZEROES && i % 10 == 0)
-			arr[i] = 0;
-		else
-			arr[i] = (float)min + ((float)rand() / RAND_MAX)*((float)(max - min));
-	}
-}
-
 /* prints doubles array */
 void printArray(float arr[], int size)
 {
@@ -112,6 +107,30 @@ void printArray(float arr[], int size)
 		printf("%8.4f", arr[i]);
 	}
 	printf("\n\n");
+}
+
+/* prints int array */
+void printArray(int arr[], int size)
+{
+	int i;
+	for (i = 0; i < size; i++)
+	{
+		printf("%4d", arr[i]);
+	}
+	printf("\n\n");
+}
+
+/* generate random array values between min and max */
+void generateArray(float arr[], int size, int min, int max)
+{
+	int i;
+	for (i = 0; i < size; i++)
+	{
+		if (GENERATE_ZEROES && i % 5 == 0 && i != 0)
+			arr[i] = 0;
+		else
+			arr[i] = (float)min + ((float)rand() / RAND_MAX)*((float)(max - min));
+	}
 }
 
 /* copy values from int array a to array b, from index 'start' to 'end' */
@@ -265,9 +284,11 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 int main(int argc, char* argv[])
 {
 	int			range[2], state_calc_num;
-	int			rank, mpi_proc_num;
+	int			rank, mpi_proc_num, max_idx = 0, *max_states_idx;
 	float		**trans, **ab, *obsrv, *emission;
+	bool		zero_flag;
 	STATE		**mat, *current, *next;
+	MAX_STATE	*max_states_arr;
 
 	MPI_Datatype	STATE_MPI_TYPE;
 	MPI_Datatype	type[2] = { MPI_FLOAT, MPI_INT };
@@ -304,10 +325,11 @@ int main(int argc, char* argv[])
 	/* initialize random seed: */
 	srand((unsigned int)time(NULL));
 
-	trans = allocateDoubleMatrix(NUM_OF_STATES, NUM_OF_STATES);
-	ab = allocateDoubleMatrix(NUM_OF_STATES, 2);
-	obsrv = (float*)calloc(NUM_OF_OBSRV, sizeof(float));
-	emission = (float*)calloc(NUM_OF_STATES, sizeof(float));
+	trans			= allocateDoubleMatrix(NUM_OF_STATES, NUM_OF_STATES);
+	ab				= allocateDoubleMatrix(NUM_OF_STATES, 2);
+	obsrv			= (float*)calloc(NUM_OF_OBSRV, sizeof(float));
+	emission		= (float*)calloc(NUM_OF_STATES, sizeof(float));
+	max_states_idx	= (int*)malloc(mpi_proc_num * sizeof(int));
 
 
 	///////////////////////////////////////////////////////////
@@ -350,42 +372,94 @@ int main(int argc, char* argv[])
 
 	if (rank == 0)		///////////////////////		master
 	{
-		mat = allocateStateMatrix(NUM_OF_OBSRV, NUM_OF_STATES);
+		mat				= allocateStateMatrix(NUM_OF_OBSRV, NUM_OF_STATES);
+		max_states_arr	= (MAX_STATE*)malloc(sizeof(MAX_STATE));
 
-		for (int i = 0; i < NUM_OF_STATES; i++)
-		{
-			if (WITH_LOGS)
-				mat[0][i].prob = 0;			// log(1) = 0
-			else
-				mat[0][i].prob = 1;
+		int max_states_num = 0;
 
-			mat[0][i].parent = -1;		// no parent
-		}
+		zero_flag = true;
 
 		double startTime = MPI_Wtime();
 
-		for (int i = 0; i < NUM_OF_OBSRV - 1; i++)		// loop on time slices (observations)
+		for (int i = 0; i < NUM_OF_OBSRV; i++)		// loop on time slices (observations)
 		{
+			if (zero_flag)
+			{
+				for (int j = 0; j < NUM_OF_STATES; j++)
+				{
+					if (WITH_LOGS)
+						mat[i][j].prob = 0;			// log(1) = 0
+					else
+						mat[i][j].prob = 1;
+
+					mat[i][j].parent = -1;		// no parent
+				}
+
+				zero_flag = false;
+			}
+
 			MPI_Bcast(mat[i], NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 
-			// calculate i emission
-			for (int j = 0; j < NUM_OF_STATES; j++)
+			if ( (obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1) )
 			{
-				emission[j] = emissionCalc(ab[j][0], ab[j][1], obsrv[i]);
+
+				// calculate i emission
+				for (int j = 0; j < NUM_OF_STATES; j++)
+				{
+					emission[j] = emissionCalc(ab[j][0], ab[j][1], obsrv[i]);
+				}
+
+				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+
+				for (int j = 1; j < mpi_proc_num; j++)
+				{
+					getRange(range, j, mpi_proc_num);
+					state_calc_num = range[1] - range[0];
+					MPI_Recv(&mat[i + 1][range[0]], state_calc_num, STATE_MPI_TYPE, j, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+				}
+
+				//state_calc_num = NUM_OF_STATES / mpi_proc_num;
+				//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
+
+
+
+			}
+			else		// finding current max state
+			{
+				
+				// signal that obsrvation is zero / the end
+				emission[0] = -1;
+				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+				printf("\nrank %d observation %d >> max_states_idx gathered:", rank, i);
+				printArray(max_states_idx, mpi_proc_num);
+
+				// finding the maximum from the maximums the slaves found
+				int tmp_idx;
+				max_idx = max_states_idx[1];
+				for (int j = 2; j < mpi_proc_num; j++)
+				{
+					tmp_idx = max_states_idx[j];
+					if (mat[i][tmp_idx].prob > mat[i][max_idx].prob)
+						max_idx = tmp_idx;
+				}
+
+				max_states_num++;
+				max_states_arr = (MAX_STATE*)realloc(max_states_arr, max_states_num + 1);
+				max_states_arr[max_states_num-1].obsrv = i;
+				max_states_arr[max_states_num-1].state_num = max_idx;
+				max_states_arr[max_states_num-1].state = mat[i][max_idx];
+
+				zero_flag = true;
+
+				printf("\nrank %d observation %d >> max_state #%d , prob = %f\n", rank, i, 
+					max_states_arr[max_states_num - 1].state_num, max_states_arr[max_states_num - 1].state.prob);
+				
 			}
 
-			MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-
-			for (int j = 1; j < mpi_proc_num; j++)
-			{
-				getRange(range, j, mpi_proc_num);
-				state_calc_num = range[1] - range[0];
-				MPI_Recv(&mat[i + 1][range[0]], state_calc_num, STATE_MPI_TYPE, j, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-			}
-
-			//state_calc_num = NUM_OF_STATES / mpi_proc_num;
-			//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 
 			if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
 			{
@@ -393,7 +467,7 @@ int main(int argc, char* argv[])
 				printMatrix(mat, i + 1, NUM_OF_STATES);
 			}
 
-			if (PRINT_STATUS)
+			if (PRINT_OBSRV_STATUS)
 			{
 				cout << "Finished observation " << i << "...\n";
 				fflush(stdout);
@@ -401,36 +475,51 @@ int main(int argc, char* argv[])
 
 		}
 
-		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
+		
+		for (int i = 0; i < max_states_num; i++)
 		{
-			printf("\nMatrix Final:\n");
-			printMatrix(mat, NUM_OF_OBSRV, NUM_OF_STATES);
-		}
+			int num = max_states_arr[i].state_num;
 
-		int max_indx = getMaxStateIndex(mat[NUM_OF_OBSRV - 1], NUM_OF_STATES);
-		STATE max_state = mat[NUM_OF_OBSRV - 1][max_indx];
-		printf("\nFinal Max State:\n");
-		if (WITH_LOGS)
-		{
-			//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
-			printf("State %d >> Final Prob = %e\n", max_indx, max_state.prob);
-		}
-		else
-			printf("State %d >> Final Prob = %e\n", max_indx, max_state.prob);
+			//STATE max_state = mat[o][num];
+			STATE max_state = max_states_arr[i].state;
+			printf("\nMax State #%d:\n", i + 1);
+			if (WITH_LOGS)
+			{
+				//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
+				printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+			}
+			else
+				printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+		
 
-		int path[NUM_OF_OBSRV];
-		path[NUM_OF_OBSRV - 1] = max_indx;
-		for (int i = 2; i <= NUM_OF_OBSRV; i++)
-		{
-			path[NUM_OF_OBSRV - i] = max_state.parent;
-			max_state = mat[NUM_OF_OBSRV - i][max_state.parent];
-		}
-		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
-			printPath(path, NUM_OF_OBSRV);
+			// checking path
+			//range[1] = max_states_arr[i].obsrv;
+			//if (i == 0)
+			//	range[0] = 0;
+			//else
+			//	range[0] = max_states_arr[i - 1].obsrv;
 
+			//int path_len = range[1] - range[0] + 1;
+
+			//int *path = (int*)calloc(path_len, sizeof(int));
+			//path[path_len - 1] = num;
+			//for (int j = 2; j <= path_len; j++)
+			//{
+			//	path[path_len - j] = max_state.parent;
+			//	max_state = mat[range[1] + 1 - j][max_state.parent];
+			//}
+
+			//if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
+			//	printPath(path, path_len);
+
+			//free(path);
+		}
 
 		double endTime = MPI_Wtime();
 		printf("\nMPI measured time: %lf\n\n", endTime - startTime);
+
+
+
 
 	}
 	else	///////////////////////		slaves		///////////////////////
@@ -442,49 +531,68 @@ int main(int argc, char* argv[])
 		next = (STATE*)malloc(state_calc_num * sizeof(STATE));
 
 
-		for (int i = 0; i < NUM_OF_OBSRV - 1; i++)
+		for (int i = 0; i < NUM_OF_OBSRV; i++)
 		{
 
 			MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 			MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-
-			for (int m = 0; m < state_calc_num; m++)
+			if (emission[0] != -1)
 			{
-				if (WITH_LOGS)
-					next[m].prob = current[0].prob + log(trans[0][m + range[0]]) + log(emission[0]);
-				else
-					next[m].prob = current[0].prob * trans[0][m + range[0]] * emission[0];
 
-				next[m].parent = 0;
-
-				for (int j = 1; j < NUM_OF_STATES; j++)
+				for (int m = 0; m < state_calc_num; m++)
 				{
-					float tmp_calc;
-
 					if (WITH_LOGS)
-						tmp_calc = current[j].prob + log(trans[j][m + range[0]]) + log(emission[j]);
+						next[m].prob = current[0].prob + log(trans[0][m + range[0]]) + log(emission[0]);
 					else
-						tmp_calc = current[j].prob * trans[j][m + range[0]] * emission[j];
+						next[m].prob = current[0].prob * trans[0][m + range[0]] * emission[0];
 
-					if (tmp_calc > next[m].prob)
+					next[m].parent = 0;
+
+					for (int j = 1; j < NUM_OF_STATES; j++)
 					{
-						next[m].prob = tmp_calc;
-						next[m].parent = j;
+						float tmp_calc;
+
+						if (WITH_LOGS)
+							tmp_calc = current[j].prob + log(trans[j][m + range[0]]) + log(emission[j]);
+						else
+							tmp_calc = current[j].prob * trans[j][m + range[0]] * emission[j];
+
+						if (tmp_calc > next[m].prob)
+						{
+							next[m].prob = tmp_calc;
+							next[m].parent = j;
+						}
 					}
+
 				}
 
+				MPI_Send(next, state_calc_num, STATE_MPI_TYPE, 0, 0, MPI_COMM_WORLD);
+
+				//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
+				
+				//printf("\nrank %d observation %d >> next array\n", rank, i);
+				//printArray(next, state_calc_num);
+
+			}
+			else
+			{
+				max_idx = range[0];
+
+				for (int j = range[0] + 1; j < range[1]; j++)
+				{
+					if (current[j].prob > current[max_idx].prob)
+						max_idx = j;
+				}
+
+				printf("\nrank %d Observation %d >> sending max: %f , index: %d\n", rank, i, current[max_idx].prob, max_idx);
+
+				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 			}
 
-			MPI_Send(next, state_calc_num, STATE_MPI_TYPE, 0, 0, MPI_COMM_WORLD);
 
 
 
-			//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-
-
-			//printf("\nrank %d observation %d >> next array\n", rank, i);
-			//printArray(next, state_calc_num);
 		}
 
 
@@ -500,10 +608,12 @@ int main(int argc, char* argv[])
 	freeMatrix(ab, NUM_OF_STATES);
 	free(obsrv);
 	free(emission);
+	free(max_states_idx);
 
 	if (rank == 0)
 	{
 		freeMatrix(mat, NUM_OF_STATES);
+		free(max_states_arr);
 	}
 	else
 	{
