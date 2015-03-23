@@ -11,14 +11,15 @@
 using namespace std;
 
 
-#define NUM_OF_STATES 5			// number of states, default: 1000
-#define NUM_OF_OBSRV 8			// number of time slices, default: 30000
+#define NUM_OF_STATES 1000			// number of states, default: 1000
+#define NUM_OF_OBSRV 1000			// number of time slices, default: 30000
 
 
-const bool GENERATE_ZEROES = true;
-const bool TEST_VALUES = false;
-const bool WITH_LOGS = false;
-const bool PRINT_OBSRV_STATUS = true;
+static const bool	GENERATE_ZEROES = true;
+static const int	ZERO_EVERY = 100;
+static const bool	TEST_VALUES = false;
+static const bool	WITH_LOGS = true;
+static const bool	PRINT_OBSRV_STATUS = true;
 
 
 typedef struct STATE
@@ -126,7 +127,7 @@ void generateArray(float arr[], int size, int min, int max)
 	int i;
 	for (i = 0; i < size; i++)
 	{
-		if (GENERATE_ZEROES && i % 5 == 0 && i != 0)
+		if (GENERATE_ZEROES && i % ZERO_EVERY == 0 && i != 0)
 			arr[i] = 0;
 		else
 			arr[i] = (float)min + ((float)rand() / RAND_MAX)*((float)(max - min));
@@ -272,6 +273,51 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	ab[2][0] = 5;		ab[2][1] = 8;
 
 	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+}
+
+void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
+{
+	int end, start;
+
+	for (int i = 0; i < size; i++)
+	{
+		int num = arr[i].state_num;
+
+		STATE max_state = arr[i].state;
+		printf("\nMax State #%d - Observation %d:\n", i + 1, arr[i].obsrv);
+		if (WITH_LOGS)
+		{
+			//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
+			printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+		}
+		else
+			printf("State %d >> Final Prob = %e\n", num, max_state.prob);
+
+
+		// checking path
+		end = arr[i].obsrv;
+		if (i == 0)
+			start = 0;
+		else
+			start = arr[i - 1].obsrv + 1;
+
+		int path_len = end - start + 1;
+
+		int *path = (int*)calloc(path_len, sizeof(int));
+		path[path_len - 1] = num;
+		for (int j = 2; j <= path_len; j++)
+		{
+			path[path_len - j] = max_state.parent;
+			max_state = mat[end + 1 - j][max_state.parent];
+		}
+
+		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
+			printPath(path, path_len);
+		else
+			printf("Path: %d -> %d -> ... -> %d -> %d\n", path[0], path[1], path[path_len - 2], path[path_len - 1]);
+
+		free(path);
+	}
 }
 
 
@@ -434,8 +480,9 @@ int main(int argc, char* argv[])
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-				printf("\nrank %d observation %d >> max_states_idx gathered:", rank, i);
-				printArray(max_states_idx, mpi_proc_num);
+				//printf("\nrank %d observation %d >> max_states_idx gathered:", rank, i);
+				//printArray(max_states_idx, mpi_proc_num);
+
 
 				// finding the maximum from the maximums the slaves found
 				int tmp_idx;
@@ -448,15 +495,15 @@ int main(int argc, char* argv[])
 				}
 
 				max_states_num++;
-				max_states_arr = (MAX_STATE*)realloc(max_states_arr, max_states_num + 1);
+				max_states_arr = (MAX_STATE*)realloc(max_states_arr, (max_states_num + 1) * sizeof(MAX_STATE));
 				max_states_arr[max_states_num-1].obsrv = i;
 				max_states_arr[max_states_num-1].state_num = max_idx;
 				max_states_arr[max_states_num-1].state = mat[i][max_idx];
 
 				zero_flag = true;
 
-				printf("\nrank %d observation %d >> max_state #%d , prob = %f\n", rank, i, 
-					max_states_arr[max_states_num - 1].state_num, max_states_arr[max_states_num - 1].state.prob);
+				//printf("\nrank %d observation %d >> max_state #%d , prob = %f\n", rank, i, 
+				//	max_states_arr[max_states_num - 1].state_num, max_states_arr[max_states_num - 1].state.prob);
 				
 			}
 
@@ -476,48 +523,11 @@ int main(int argc, char* argv[])
 		}
 
 		
-		for (int i = 0; i < max_states_num; i++)
-		{
-			int num = max_states_arr[i].state_num;
+		printAllMaxStates(mat, max_states_arr, max_states_num);
 
-			//STATE max_state = mat[o][num];
-			STATE max_state = max_states_arr[i].state;
-			printf("\nMax State #%d:\n", i + 1);
-			if (WITH_LOGS)
-			{
-				//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
-				printf("State %d >> Final Prob = %e\n", num, max_state.prob);
-			}
-			else
-				printf("State %d >> Final Prob = %e\n", num, max_state.prob);
-		
-
-			// checking path
-			//range[1] = max_states_arr[i].obsrv;
-			//if (i == 0)
-			//	range[0] = 0;
-			//else
-			//	range[0] = max_states_arr[i - 1].obsrv;
-
-			//int path_len = range[1] - range[0] + 1;
-
-			//int *path = (int*)calloc(path_len, sizeof(int));
-			//path[path_len - 1] = num;
-			//for (int j = 2; j <= path_len; j++)
-			//{
-			//	path[path_len - j] = max_state.parent;
-			//	max_state = mat[range[1] + 1 - j][max_state.parent];
-			//}
-
-			//if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
-			//	printPath(path, path_len);
-
-			//free(path);
-		}
 
 		double endTime = MPI_Wtime();
-		printf("\nMPI measured time: %lf\n\n", endTime - startTime);
-
+		printf("\n\nMPI measured time: %lf\n\n", endTime - startTime);
 
 
 
@@ -585,7 +595,7 @@ int main(int argc, char* argv[])
 						max_idx = j;
 				}
 
-				printf("\nrank %d Observation %d >> sending max: %f , index: %d\n", rank, i, current[max_idx].prob, max_idx);
+				//printf("\nrank %d Observation %d >> sending max: %f , index: %d\n", rank, i, current[max_idx].prob, max_idx);
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 			}
@@ -621,7 +631,7 @@ int main(int argc, char* argv[])
 		free(next);
 	}
 
-	printf("\n\nrank %d >> DONE\n\n", rank);
+	printf("\nrank %d >> DONE\n\n", rank);
 	MPI_Finalize();
 
 	return 0;
