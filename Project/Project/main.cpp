@@ -76,6 +76,7 @@ int getMaxStateIndex(STATE arr[], int size)
 	return max;
 }
 
+/* prints the state's given path */
 void printPath(int path[], int len)
 {
 	printf("Path: ");
