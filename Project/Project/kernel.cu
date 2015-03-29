@@ -3,31 +3,28 @@
 #include "device_launch_parameters.h"
 
 #include <stdio.h>
+#include <math.h>
 
-cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int num_of_threads);
+
+cudaError_t emissionWithCuda(float emission[], float a[], float b[], float obsrv, int num_of_states);
 
 
-__global__ void addKernel(int arr[], int arrSize, int hist[], int histSize)
+//float *dev_a, *dev_b, *dev_obsrv;
+
+
+__global__ void emissionKernel(float emission[], float a[], float b[], float obsrv[])
 {
-	int i, start, num_of_threads, num_per_thread;
-	int id = threadIdx.x;
-
-	num_of_threads = blockDim.x;
-	num_per_thread = arrSize / num_of_threads;
-	start = num_per_thread * id;
-
-	//printf("id = %d , shift = %d\n", id, shift);
-
-	for (i = start; i < start + num_per_thread; i++) {
-
-	}
+	int i = threadIdx.x;
+	emission[i] = a[i] * exp(-pow(obsrv[0] - b[i], 2));
 }
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int num_of_threads)
+// Helper function for using CUDA to calculate the emission function
+cudaError_t emissionWithCuda(float emission[], float a[], float b[], float obsrv, int num_of_states)
 {
-	int *dev_arr = 0;
-	int *dev_hist = 0;
+	float *dev_emission = 0;
+	float *dev_a = 0;
+	float *dev_b = 0;
+	float *dev_obsrv = 0;
 	cudaError_t cudaStatus;
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
@@ -37,37 +34,57 @@ cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int n
 		goto Error;
 	}
 
-	// Allocate GPU buffers for three vectors (two input, one output)    .
-	cudaStatus = cudaMalloc((void**)&dev_arr, arrSize * sizeof(int));
+	// Allocate GPU buffers
+	cudaStatus = cudaMalloc((void**)&dev_emission, num_of_states * sizeof(float));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		goto Error;
 	}
 
-	cudaStatus = cudaMalloc((void**)&dev_hist, histSize * sizeof(int));
+	cudaStatus = cudaMalloc((void**)&dev_a, num_of_states * sizeof(float));
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed!");
+		goto Error;
+	}
+
+	cudaStatus = cudaMalloc((void**)&dev_b, num_of_states * sizeof(float));
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed!");
+		goto Error;
+	}
+
+	cudaStatus = cudaMalloc((void**)&dev_obsrv, sizeof(float));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		goto Error;
 	}
 
 	// Copy input vectors from host memory to GPU buffers.
-	cudaStatus = cudaMemcpy(dev_arr, arr, arrSize * sizeof(int), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(dev_a, a, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error;
 	}
 
-	//dim3 gr(2, 2);
-	//dim3 bl(1, 2, 4);
-	//addKernel<<<gr, bl>>>(dev_a, dev_sum);
+	cudaStatus = cudaMemcpy(dev_b, b, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed!");
+		goto Error;
+	}
+
+	cudaStatus = cudaMemcpy(dev_obsrv, &obsrv, sizeof(float), cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed!");
+		goto Error;
+	}
 
 	// Launch a kernel on the GPU with one thread for each element.
-	addKernel << <1, num_of_threads >> >(dev_arr, arrSize, dev_hist, histSize);
+	emissionKernel << < 1, num_of_states >> >(dev_emission, dev_a, dev_b, dev_obsrv);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		fprintf(stderr, "emissionKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
 		goto Error;
 	}
 
@@ -80,15 +97,17 @@ cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int n
 	}
 
 	// Copy output vector from GPU buffer to host memory.
-	cudaStatus = cudaMemcpy(hist, dev_hist, histSize * sizeof(int), cudaMemcpyDeviceToHost);
+	cudaStatus = cudaMemcpy(emission, dev_emission, num_of_states * sizeof(float), cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error;
 	}
 
 Error:
-	cudaFree(dev_arr);
-	cudaFree(dev_hist);
+	cudaFree(dev_emission);
+	cudaFree(dev_a);
+	cudaFree(dev_b);
+	cudaFree(dev_obsrv);
 
 	return cudaStatus;
 }

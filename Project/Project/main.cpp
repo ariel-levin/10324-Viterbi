@@ -12,15 +12,16 @@
 using namespace std;
 
 
-#define NUM_OF_STATES 1000			// number of states, default: 1000
-#define NUM_OF_OBSRV 1000			// number of time slices, default: 30000
+#define NUM_OF_STATES 3			// number of states, default: 1000
+#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
 
 
 static const bool	GENERATE_ZEROES = true;
 static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	TEST_VALUES = false;
-static const bool	WITH_LOGS = true;
-static const bool	PRINT_OBSRV_STATUS = true;
+static const bool	TEST_VALUES = true;
+static const bool	WITH_LOGS = false;
+static const bool	WITH_CUDA = true;
+static const bool	PRINT_OBSRV_STATUS = false;
 
 
 typedef struct STATE
@@ -39,7 +40,7 @@ typedef struct MAX_STATE
 } MAX_STATE;
 
 
-//cudaError_t getHistogram(int arr[], int arrSize, int hist[], int histSize, int num_of_threads);
+cudaError_t emissionWithCuda(float emission[], float a[], float b[], float obsrv, int num_of_states);
 
 
 
@@ -283,9 +284,8 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	trans[1][0] = 0.4f;	trans[1][1] = 0.5f;	trans[1][2] = 0.9f;
 	trans[2][0] = 0.3f;	trans[2][1] = 0.8f;	trans[2][2] = 0.9f;
 
-	ab[0][0] = 2;		ab[0][1] = 9;
-	ab[1][0] = 50;		ab[1][1] = 5;
-	ab[2][0] = 5;		ab[2][1] = 8;
+	ab[0][0] = 2;	ab[0][1] = 50;	ab[0][2] = 5;
+	ab[1][0] = 9;	ab[1][1] = 5;	ab[1][2] = 8;
 
 	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
 }
@@ -362,6 +362,7 @@ int main(int argc, char* argv[])
 	int				blocklen[2] = { 1, 1 };
 
 	MPI_Status	status;
+	cudaError_t cudaStatus;
 
 
 	MPI_Init(&argc, &argv);
@@ -392,7 +393,7 @@ int main(int argc, char* argv[])
 	srand((unsigned int)time(NULL));
 
 	trans			= allocateDoubleMatrix(NUM_OF_STATES, NUM_OF_STATES);
-	ab				= allocateDoubleMatrix(NUM_OF_STATES, 2);
+	ab				= allocateDoubleMatrix(2, NUM_OF_STATES);
 	obsrv			= (float*)calloc(NUM_OF_OBSRV, sizeof(float));
 	emission		= (float*)calloc(NUM_OF_STATES, sizeof(float));
 	max_states_idx	= (int*)malloc(mpi_proc_num * sizeof(int));
@@ -409,7 +410,7 @@ int main(int argc, char* argv[])
 		{
 			generateMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
 			normalizeMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
-			generateMatrix(ab, NUM_OF_STATES, 2);
+			generateMatrix(ab, 2, NUM_OF_STATES);
 			generateArray(obsrv, NUM_OF_OBSRV);
 		}
 
@@ -419,7 +420,7 @@ int main(int argc, char* argv[])
 			printMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
 			printf("\n");
 			printf("rank %d >> a,b Matrix:\n", rank);
-			printMatrix(ab, NUM_OF_STATES, 2);
+			printMatrix(ab, 2, NUM_OF_STATES);
 			printf("\n");
 			printf("rank %d >> Observations Array:\n", rank);
 			printArray(obsrv, NUM_OF_OBSRV);
@@ -470,10 +471,26 @@ int main(int argc, char* argv[])
 			{
 
 				// calculate i emission
-				for (int j = 0; j < NUM_OF_STATES; j++)
+				if (WITH_CUDA)
 				{
-					emission[j] = emissionCalc(ab[j][0], ab[j][1], obsrv[i]);
+					cudaStatus = emissionWithCuda(emission, ab[0], ab[1], obsrv[i], NUM_OF_STATES);
+					if (cudaStatus != cudaSuccess)
+					{
+						fprintf(stderr, "ERROR: rank %d , observation %d >> Calculate emission failed!", rank, i);
+						return 1;
+					}
 				}
+				else
+				{
+					for (int j = 0; j < NUM_OF_STATES; j++)
+					{
+						emission[j] = emissionCalc(ab[0][j], ab[1][j], obsrv[i]);
+					}
+				}
+
+				printf("\nrank %d observation %d >> emission: ", rank, i);
+				printArray(emission, NUM_OF_STATES);
+
 
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
@@ -636,7 +653,7 @@ int main(int argc, char* argv[])
 
 
 	freeMatrix(trans, NUM_OF_STATES);
-	freeMatrix(ab, NUM_OF_STATES);
+	freeMatrix(ab, 2);
 	free(obsrv);
 	free(emission);
 	free(max_states_idx);
@@ -645,6 +662,13 @@ int main(int argc, char* argv[])
 	{
 		freeMatrix(mat, NUM_OF_OBSRV);
 		free(max_states_arr);
+
+		cudaStatus = cudaDeviceReset();
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
+			return 1;
+		}
 	}
 	else
 	{
