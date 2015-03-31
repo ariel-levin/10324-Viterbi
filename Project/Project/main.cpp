@@ -5,23 +5,25 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <string>
 #include <mpi.h>
 #include <omp.h>
 #include "iostream"
+#include "main.h"
 
 using namespace std;
 
 
-#define NUM_OF_STATES 3			// number of states, default: 1000
-#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
+#define NUM_OF_STATES 1000			// number of states, default: 1000
+#define NUM_OF_OBSRV 5000			// number of time slices, default: 30000
 
 
 static const bool	GENERATE_ZEROES = true;
 static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	TEST_VALUES = true;
-static const bool	WITH_LOGS = false;
+static const bool	TEST_VALUES = false;
+static const bool	WITH_LOGS = true;
 static const bool	WITH_CUDA = true;
-static const bool	PRINT_OBSRV_STATUS = false;
+static const bool	PRINT_STATUS = true;
 
 
 typedef struct STATE
@@ -163,7 +165,7 @@ void copyArray(int a[], int b[], int start, int end)
 }
 
 /* allocate space and returns doubles matrix with number of rows and cols received */
-float** allocateDoubleMatrix(int rows, int cols)
+float** allocateFloatMatrix(int rows, int cols)
 {
 	float **mat;
 	mat = (float**)calloc(rows, sizeof(float*));
@@ -261,9 +263,23 @@ void normalizeMatrix(float *mat[], int rows, int cols)
 		{
 			sum += mat[i][j];
 		}
+#pragma omp parallel for
 		for (int j = 0; j < cols; j++)
 		{
 			mat[i][j] = mat[i][j] / sum;
+		}
+	}
+}
+
+/* commit log function to every value on the matrix with OpenMP */
+void logMatrixValues(float *mat[], int rows, int cols)
+{
+#pragma omp parallel for
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			mat[i][j] = log(mat[i][j]);
 		}
 	}
 }
@@ -282,9 +298,18 @@ void getRange(int range[], int rank, int mpi_proc_num)
 
 void testValues(float *trans[], float *ab[], float obsrv[])
 {
-	trans[0][0] = 0.8f;	trans[0][1] = 0.5f;	trans[0][2] = 0.3f;
-	trans[1][0] = 0.4f;	trans[1][1] = 0.5f;	trans[1][2] = 0.9f;
-	trans[2][0] = 0.3f;	trans[2][1] = 0.8f;	trans[2][2] = 0.9f;
+	if (WITH_LOGS)
+	{
+		trans[0][0] = log(0.8f); trans[0][1] = log(0.5f); trans[0][2] = log(0.3f);
+		trans[1][0] = log(0.4f); trans[1][1] = log(0.5f); trans[1][2] = log(0.9f);
+		trans[2][0] = log(0.3f); trans[2][1] = log(0.8f); trans[2][2] = log(0.9f);
+	}
+	else
+	{
+		trans[0][0] = 0.8f;	trans[0][1] = 0.5f;	trans[0][2] = 0.3f;
+		trans[1][0] = 0.4f;	trans[1][1] = 0.5f;	trans[1][2] = 0.9f;
+		trans[2][0] = 0.3f;	trans[2][1] = 0.8f;	trans[2][2] = 0.9f;
+	}
 
 	ab[0][0] = 2;	ab[0][1] = 50;	ab[0][2] = 5;
 	ab[1][0] = 9;	ab[1][1] = 5;	ab[1][2] = 8;
@@ -330,8 +355,10 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 		printf("\nMax State #%d - Observation %d:\n", i + 1, arr[i].obsrv);
 		if (WITH_LOGS)
 		{
-			//printf("State %d >> Final Prob = %e\n", max_indx, exp(max_state.prob));
-			printf("State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
+			if (exp(max_state.prob) != 0)
+				printf("State %d >> Final Prob = %e\n", arr[i].state_num, exp(max_state.prob));
+			else
+				printf("State %d >> Final Prob (log) = %e\n", arr[i].state_num, max_state.prob);
 		}
 		else
 			printf("State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
@@ -395,8 +422,8 @@ int main(int argc, char* argv[])
 	/* initialize random seed: */
 	srand((unsigned int)time(NULL));
 
-	trans			= allocateDoubleMatrix(NUM_OF_STATES, NUM_OF_STATES);
-	ab				= allocateDoubleMatrix(2, NUM_OF_STATES);
+	trans			= allocateFloatMatrix(NUM_OF_STATES, NUM_OF_STATES);
+	ab				= allocateFloatMatrix(2, NUM_OF_STATES);
 	obsrv			= (float*)calloc(NUM_OF_OBSRV, sizeof(float));
 	emission		= (float*)calloc(NUM_OF_STATES, sizeof(float));
 	max_states_idx	= (int*)malloc(mpi_proc_num * sizeof(int));
@@ -440,7 +467,7 @@ int main(int argc, char* argv[])
 
 	///////////////////////////////////////////////////////////
 
-
+	printf("\n");
 
 	if (rank == 0)		///////////////////////		master
 	{
@@ -451,7 +478,9 @@ int main(int argc, char* argv[])
 
 		bool zero_flag = true;
 
-		double startTime = MPI_Wtime();
+		double startTime = MPI_Wtime();								///////////// START TIME
+
+		logMatrixValues(trans, NUM_OF_STATES, NUM_OF_STATES);
 
 		for (int i = 0; i < NUM_OF_OBSRV; i++)		// loop on time slices (observations)
 		{
@@ -554,9 +583,11 @@ int main(int argc, char* argv[])
 				printMatrix(mat, i + 1, NUM_OF_STATES);
 			}
 
-			if (PRINT_OBSRV_STATUS)
+			if (PRINT_STATUS)
 			{
-				cout << "Finished observation " << i << "...\n";
+				//system("cls");
+				//cout << (int)(((float)(i + 1) / NUM_OF_OBSRV) * 100) << "%";
+				cout << i << "\n";
 				fflush(stdout);
 			}
 
@@ -564,7 +595,7 @@ int main(int argc, char* argv[])
 
 		printAllMaxStates(mat, max_states_arr, max_states_num);
 
-		double endTime = MPI_Wtime();
+		double endTime = MPI_Wtime();								///////////// END TIME
 		printf("\n\nMPI measured time: %lf\n\n", endTime - startTime);
 
 
@@ -591,7 +622,10 @@ int main(int argc, char* argv[])
 				for (int m = 0; m < state_calc_num; m++)
 				{
 					if (WITH_LOGS)
-						next[m].prob = current[0].prob + log(trans[0][m + range[0]]) + log(emission[0]);
+					{
+						//next[m].prob = current[0].prob + log(trans[0][m + range[0]]) + log(emission[0]);
+						next[m].prob = current[0].prob + trans[0][m + range[0]] + emission[0];
+					}
 					else
 						next[m].prob = current[0].prob * trans[0][m + range[0]] * emission[0];
 
@@ -602,7 +636,10 @@ int main(int argc, char* argv[])
 						float tmp_calc;
 
 						if (WITH_LOGS)
-							tmp_calc = current[j].prob + log(trans[j][m + range[0]]) + log(emission[j]);
+						{
+							//tmp_calc = current[j].prob + log(trans[j][m + range[0]]) + log(emission[j]);
+							tmp_calc = current[j].prob + trans[j][m + range[0]] + emission[j];
+						}
 						else
 							tmp_calc = current[j].prob * trans[j][m + range[0]] * emission[j];
 

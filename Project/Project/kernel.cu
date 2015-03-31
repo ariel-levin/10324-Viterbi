@@ -4,17 +4,22 @@
 
 #include <stdio.h>
 #include <math.h>
-
+#include "main.h"
 
 cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[], unsigned int num_of_states);
 cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], float obsrv, unsigned int num_of_states);
 void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
 
 
-__global__ void emissionKernel(float emission[], float a[], float b[], float obsrv)
+__global__ void emissionKernel(float emission[], float a[], float b[], float obsrv, bool withLog)
 {
-	int i = threadIdx.x;
-	emission[i] = a[i] * exp(-pow(obsrv - b[i], 2));
+	//int i = threadIdx.x;
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (withLog)
+		emission[i] = log(a[i] * exp(-pow(obsrv - b[i], 2)));
+	else
+		emission[i] = a[i] * exp(-pow(obsrv - b[i], 2));
 }
 
 
@@ -78,9 +83,18 @@ cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, floa
 cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], float obsrv, unsigned int num_of_states)
 {
 	cudaError_t cudaStatus;
+	bool withLog = true;
+
+	//if (WITH_LOGS)
+	//	withLog = true;
 
 	// Launch a kernel on the GPU with one thread for each element.
-	emissionKernel << < 1, num_of_states >> >(cuda_emission, cuda_a, cuda_b, obsrv);
+	//emissionKernel << < 1, num_of_states >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
+
+	// Invoke kernel 
+	int threadsPerBlock = 2;
+	int blocksPerGrid = (num_of_states + threadsPerBlock - 1) / threadsPerBlock;
+	emissionKernel << < blocksPerGrid, threadsPerBlock >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
