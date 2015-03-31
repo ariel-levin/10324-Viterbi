@@ -20,64 +20,56 @@ __global__ void emissionKernel(float emission[], float a[], float b[], float obs
 
 cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[], unsigned int num_of_states)
 {
-	float *tmp_a = 0;
-	float *tmp_b = 0;
-	float *tmp_emission = 0;
 	cudaError_t cudaStatus;
+	*cuda_a = 0;
+	*cuda_b = 0;
+	*cuda_emission = 0;
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
 	cudaStatus = cudaSetDevice(0);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
 
 	// Allocate GPU buffers
-	cudaStatus = cudaMalloc((void**)&tmp_a, num_of_states * sizeof(float));
+	cudaStatus = cudaMalloc((void**)cuda_a, num_of_states * sizeof(float));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&tmp_b, num_of_states * sizeof(float));
+	cudaStatus = cudaMalloc((void**)cuda_b, num_of_states * sizeof(float));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMalloc((void**)&tmp_emission, num_of_states * sizeof(float));
+	cudaStatus = cudaMalloc((void**)cuda_emission, num_of_states * sizeof(float));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
-
 
 
 	// Copy input vectors from host memory to GPU buffers.
-
-	cudaStatus = cudaMemcpy(tmp_a, a, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
-	//cudaStatus = cudaMemcpyToSymbol(cuda_a, a, num_of_states * sizeof(float), size_t(0), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(*cuda_a, a, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
 
-	cudaStatus = cudaMemcpy(tmp_b, b, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
-	//cudaStatus = cudaMemcpyToSymbol(cuda_b, b, num_of_states * sizeof(float), size_t(0), cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(*cuda_b, b, num_of_states * sizeof(float), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
-		freeCuda(tmp_emission, tmp_a, tmp_b);
+		freeCuda(*cuda_emission, *cuda_a, *cuda_b);
 		return cudaStatus;
 	}
-
-	*cuda_a = tmp_a;
-	*cuda_b = tmp_b;
-	*cuda_emission = tmp_emission;
 
 	return cudaStatus;
 }
