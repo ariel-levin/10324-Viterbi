@@ -40,7 +40,9 @@ typedef struct MAX_STATE
 } MAX_STATE;
 
 
-cudaError_t emissionWithCuda(float emission[], float a[], float b[], float obsrv, int num_of_states);
+cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[], unsigned int num_of_states);
+cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], float obsrv, unsigned int num_of_states);
+void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
 
 
 
@@ -353,6 +355,7 @@ int main(int argc, char* argv[])
 	int			range[2], state_calc_num;
 	int			rank, mpi_proc_num, max_idx = 0, *max_states_idx;
 	float		**trans, **ab, *obsrv, *emission;
+	float		*cuda_emission, *cuda_a, *cuda_b;		// pointers to memory in GPU
 	STATE		**mat, *current, *next;
 	MAX_STATE	*max_states_arr;
 
@@ -426,6 +429,8 @@ int main(int argc, char* argv[])
 			printArray(obsrv, NUM_OF_OBSRV);
 		}
 
+		if (WITH_CUDA)
+			initCuda(&cuda_a, &cuda_b, &cuda_emission, ab[0], ab[1], NUM_OF_STATES);
 	}
 
 	for (int i = 0; i < NUM_OF_STATES; i++)
@@ -473,7 +478,7 @@ int main(int argc, char* argv[])
 				// calculate i emission
 				if (WITH_CUDA)
 				{
-					cudaStatus = emissionWithCuda(emission, ab[0], ab[1], obsrv[i], NUM_OF_STATES);
+					cudaStatus = emissionWithCuda(emission, cuda_emission, cuda_a, cuda_b, obsrv[i], NUM_OF_STATES);
 					if (cudaStatus != cudaSuccess)
 					{
 						fprintf(stderr, "ERROR: rank %d , observation %d >> Calculate emission failed!", rank, i);
@@ -487,10 +492,6 @@ int main(int argc, char* argv[])
 						emission[j] = emissionCalc(ab[0][j], ab[1][j], obsrv[i]);
 					}
 				}
-
-				printf("\nrank %d observation %d >> emission: ", rank, i);
-				printArray(emission, NUM_OF_STATES);
-
 
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
@@ -662,13 +663,19 @@ int main(int argc, char* argv[])
 	{
 		freeMatrix(mat, NUM_OF_OBSRV);
 		free(max_states_arr);
-
-		cudaStatus = cudaDeviceReset();
-		if (cudaStatus != cudaSuccess)
+		
+		if (WITH_CUDA)
 		{
-			fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
-			return 1;
+			freeCuda(cuda_emission, cuda_a, cuda_b);
+
+			cudaStatus = cudaDeviceReset();
+			if (cudaStatus != cudaSuccess)
+			{
+				fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
+				return 1;
+			}
 		}
+
 	}
 	else
 	{
