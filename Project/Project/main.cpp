@@ -285,6 +285,7 @@ void logMatrixValues(float *mat[], int rows, int cols)
 	}
 }
 
+/* returns the range of a specific slave to work on */
 void getRange(int range[], int rank, int mpi_proc_num)
 {
 	int calc_per_proc = NUM_OF_STATES / (mpi_proc_num - 1);
