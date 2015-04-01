@@ -88,9 +88,6 @@ cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda
 	//if (WITH_LOGS)
 	//	withLog = true;
 
-	// Launch a kernel on the GPU with one thread for each element.
-	//emissionKernel << < 1, num_of_states >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
-
 	// Invoke kernel 
 	int threadsPerBlock = 1024;
 	int blocksPerGrid = (num_of_states + threadsPerBlock - 1) / threadsPerBlock;

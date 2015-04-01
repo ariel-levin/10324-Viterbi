@@ -13,13 +13,13 @@
 
 using namespace std;
 
-#define NUM_OF_STATES 3			// number of states, default: 1000
-#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
+#define NUM_OF_STATES 1000			// number of states, default: 1000
+#define NUM_OF_OBSRV 30000			// number of time slices, default: 30000
 
 
-static const bool	GENERATE_ZEROES = false;
+static const bool	GENERATE_ZEROES = true;
 static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	TEST_VALUES = true;
+static const bool	TEST_VALUES = false;
 static const bool	WITH_LOGS = true;
 static const bool	WITH_CUDA = true;
 static const bool	PRINT_STATUS = false;
@@ -148,7 +148,7 @@ void generateArray(float arr[], int size)
 		if (GENERATE_ZEROES && i == next_zero)
 		{
 			arr[i] = 0;
-			next_zero = (i+1) + (rand() % MAX_ZERO_RANGE);
+			next_zero = (i + 1) + (rand() % MAX_ZERO_RANGE);
 		}
 		else
 			arr[i] = (float)rand() / RAND_MAX;
@@ -372,12 +372,13 @@ int calcEmission(float emission[], float *ab[], float obsrv)
 	return 0;
 }
 
-void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[], 
+void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[],
 	int range[2], bool findMax, int *max_idx)
 {
 	if (findMax)		// signal to also find the maximum
 		*max_idx = 0;
 
+#pragma omp parallel for
 	for (int m = 0; m < state_calc_num; m++)
 	{
 		if (WITH_LOGS)
@@ -403,8 +404,12 @@ void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], 
 			}
 		}
 
-		if (findMax && next[m].prob > next[*max_idx].prob)
-			*max_idx = m;
+#pragma omp critical
+		{
+			if (findMax && next[m].prob > next[*max_idx].prob)
+				*max_idx = m;
+		}
+
 	}
 
 	if (findMax)
@@ -454,7 +459,7 @@ int* getPath(MAX_STATE *arr, int i, STATE *mat[])
 	return path;
 }
 
-int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission[], 
+int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission[],
 	int max_states_idx[], STATE *mat[], MAX_STATE max_states_arr[], STATE current[], STATE next[])
 {
 	cudaError_t cudaStatus;
@@ -510,7 +515,7 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 
 
 		int *path = getPath(arr, i, mat);
-		printPath(path, getPathLength(arr, i) );
+		printPath(path, getPathLength(arr, i));
 		free(path);
 	}
 }
@@ -566,11 +571,11 @@ int main(int argc, char* argv[])
 	srand((unsigned int)time(NULL));
 
 	// allocate space
-	trans			= allocateFloatMatrix(NUM_OF_STATES, NUM_OF_STATES);
-	ab				= allocateFloatMatrix(2, NUM_OF_STATES);
-	obsrv			= (float*)calloc(NUM_OF_OBSRV, sizeof(float));
-	emission		= (float*)calloc(NUM_OF_STATES, sizeof(float));
-	max_states_idx	= (int*)malloc(mpi_proc_num * sizeof(int));
+	trans = allocateFloatMatrix(NUM_OF_STATES, NUM_OF_STATES);
+	ab = allocateFloatMatrix(2, NUM_OF_STATES);
+	obsrv = (float*)calloc(NUM_OF_OBSRV, sizeof(float));
+	emission = (float*)calloc(NUM_OF_STATES, sizeof(float));
+	max_states_idx = (int*)malloc(mpi_proc_num * sizeof(int));
 
 
 	///////////////////////////////////////////////////////////
@@ -612,11 +617,10 @@ int main(int argc, char* argv[])
 
 	if (rank == 0)		///////////////////////		master
 	{
-		mat				= allocateStateMatrix(NUM_OF_OBSRV, NUM_OF_STATES);
-		max_states_arr	= (MAX_STATE*)malloc(sizeof(MAX_STATE));
+		mat = allocateStateMatrix(NUM_OF_OBSRV, NUM_OF_STATES);
+		max_states_arr = (MAX_STATE*)malloc(sizeof(MAX_STATE));
 
 		int max_states_num = 0;
-
 		bool zero_flag = true;
 
 		double startTime = MPI_Wtime();								///////////// START TIME
@@ -642,7 +646,7 @@ int main(int argc, char* argv[])
 				zero_flag = false;
 			}
 
-			if ( (obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1) )
+			if ((obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1))		// normal observation
 			{
 				if ((obsrv[i + 1] == 0) || (i == NUM_OF_OBSRV - 2))
 					action_flag = 2;		// signal the slaves to calc next and also find it's max
@@ -667,15 +671,14 @@ int main(int argc, char* argv[])
 					MPI_Recv(&mat[i + 1][range[0]], state_calc_num, STATE_MPI_TYPE, j, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 				}
 
-
 			}
 			else		// finding current max state
 			{
 
-				if (i < NUM_OF_OBSRV - 1) 
-					action_flag = 3;	// signal that obsrvation is zero
+				if (i < NUM_OF_OBSRV - 1)
+					action_flag = 3;		// signal that obsrvation is zero
 				else
-					action_flag = 4;	// signal that's the last obsrvation
+					action_flag = 4;		// signal that's the last obsrvation
 
 				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -712,7 +715,6 @@ int main(int argc, char* argv[])
 		printf("\n\nMPI measured time: %lf\n\n", endTime - startTime);
 
 
-
 	}
 	else	///////////////////////		slaves		///////////////////////
 	{
@@ -732,10 +734,7 @@ int main(int argc, char* argv[])
 
 		while (more_calc)
 		{
-			
-
 			MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
 
 			if (action_flag != 3 && action_flag != 4)		// normal observation
 			{
@@ -743,9 +742,11 @@ int main(int argc, char* argv[])
 
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-				viterbi(current, next, state_calc_num, trans, emission, range, (action_flag == 2), &max_idx);
+				bool findMax = (action_flag == 2);
 
-				if (action_flag == 2)
+				viterbi(current, next, state_calc_num, trans, emission, range, findMax, &max_idx);
+
+				if (findMax)
 					max_idx_updated = true;
 
 				MPI_Send(next, state_calc_num, STATE_MPI_TYPE, 0, 0, MPI_COMM_WORLD);
@@ -753,10 +754,9 @@ int main(int argc, char* argv[])
 			}
 			else
 			{
-
 				if (!max_idx_updated)		// mean we had two zero observations in a row
 					max_idx = 0;
-					
+
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 				max_idx_updated = false;
@@ -765,16 +765,12 @@ int main(int argc, char* argv[])
 					more_calc = false;
 			}
 
-
 		}
-
 
 	}
 
 
-
 	///////////////////////////////////////////////////////////
-
 
 
 	freeAll(rank, trans, ab, obsrv, emission, max_states_idx, mat, max_states_arr, current, next);
