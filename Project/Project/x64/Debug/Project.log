@@ -1,7 +1,7 @@
-﻿Build started 31-Mar-15 20:11:06.
+﻿Build started 01-Apr-15 04:06:21.
      1>Project "C:\Users\Ariel\workspace\afeka\2015a\10324-parallel\Project\Project\Project\Project.vcxproj" on node 2 (Clean target(s)).
      1>CudaClean:
-         cmd.exe /C "C:\Users\Ariel\AppData\Local\Temp\tmp096ba7ab10814dfba2738f25c455760b.cmd"
+         cmd.exe /C "C:\Users\Ariel\AppData\Local\Temp\tmpc085815ee59d4f53abf7048313a0731e.cmd"
          "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\x86_amd64"  -I"C:\Program Files\MPICH2\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\include"  -G   --keep-dir x64\Debug -maxrregcount=0  --machine 64 --compile   -g   -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /Zi /RTC1 /MDd  " -o x64\Debug\kernel.cu.obj "C:\Users\Ariel\workspace\afeka\2015a\10324-parallel\Project\Project\Project\kernel.cu" -clean
          
          C:\Users\Ariel\workspace\afeka\2015a\10324-parallel\Project\Project\Project>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\x86_amd64"  -I"C:\Program Files\MPICH2\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v6.5\include"  -G   --keep-dir x64\Debug -maxrregcount=0  --machine 64 --compile   -g   -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /Zi /RTC1 /MDd  " -o x64\Debug\kernel.cu.obj "C:\Users\Ariel\workspace\afeka\2015a\10324-parallel\Project\Project\Project\kernel.cu" -clean 
@@ -10,4 +10,4 @@
 
 Build succeeded.
 
-Time Elapsed 00:00:00.76
+Time Elapsed 00:00:00.82
