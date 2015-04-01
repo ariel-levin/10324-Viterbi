@@ -92,7 +92,7 @@ cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda
 	//emissionKernel << < 1, num_of_states >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
 
 	// Invoke kernel 
-	int threadsPerBlock = 2;
+	int threadsPerBlock = 1024;
 	int blocksPerGrid = (num_of_states + threadsPerBlock - 1) / threadsPerBlock;
 	emissionKernel << < blocksPerGrid, threadsPerBlock >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
 

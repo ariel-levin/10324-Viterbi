@@ -13,17 +13,18 @@
 
 using namespace std;
 
+#define NUM_OF_STATES 3			// number of states, default: 1000
+#define NUM_OF_OBSRV 5			// number of time slices, default: 30000
 
-#define NUM_OF_STATES 1000			// number of states, default: 1000
-#define NUM_OF_OBSRV 5000			// number of time slices, default: 30000
 
-
-static const bool	GENERATE_ZEROES = true;
+static const bool	GENERATE_ZEROES = false;
 static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	TEST_VALUES = false;
+static const bool	TEST_VALUES = true;
 static const bool	WITH_LOGS = true;
 static const bool	WITH_CUDA = true;
-static const bool	PRINT_STATUS = true;
+static const bool	PRINT_STATUS = false;
+
+float	*cuda_emission, *cuda_a, *cuda_b;		// pointers to memory in GPU
 
 
 typedef struct STATE
@@ -48,7 +49,7 @@ void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
 
 
 
-float emissionCalc(float aj, float bj, float oi)
+float emissionFunc(float aj, float bj, float oi)
 {
 	return aj * exp(-pow(oi - bj, 2));
 }
@@ -298,23 +299,128 @@ void getRange(int range[], int rank, int mpi_proc_num)
 
 void testValues(float *trans[], float *ab[], float obsrv[])
 {
-	if (WITH_LOGS)
-	{
-		trans[0][0] = log(0.8f); trans[0][1] = log(0.5f); trans[0][2] = log(0.3f);
-		trans[1][0] = log(0.4f); trans[1][1] = log(0.5f); trans[1][2] = log(0.9f);
-		trans[2][0] = log(0.3f); trans[2][1] = log(0.8f); trans[2][2] = log(0.9f);
-	}
-	else
-	{
-		trans[0][0] = 0.8f;	trans[0][1] = 0.5f;	trans[0][2] = 0.3f;
-		trans[1][0] = 0.4f;	trans[1][1] = 0.5f;	trans[1][2] = 0.9f;
-		trans[2][0] = 0.3f;	trans[2][1] = 0.8f;	trans[2][2] = 0.9f;
-	}
+	trans[0][0] = 0.8f;	trans[0][1] = 0.5f;	trans[0][2] = 0.3f;
+	trans[1][0] = 0.4f;	trans[1][1] = 0.5f;	trans[1][2] = 0.9f;
+	trans[2][0] = 0.3f;	trans[2][1] = 0.8f;	trans[2][2] = 0.9f;
 
 	ab[0][0] = 2;	ab[0][1] = 50;	ab[0][2] = 5;
 	ab[1][0] = 9;	ab[1][1] = 5;	ab[1][2] = 8;
 
 	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
+	//obsrv[0] = 0;	obsrv[1] = 5;	obsrv[2] = 0;	obsrv[3] = 4;	obsrv[4] = 0;
+}
+
+/* returns the next index i in observation array that obsrv[i] is not zero */
+int getNextIndexToCalc(float obsrv[], int current)
+{
+	int i = current + 1;
+	while ((obsrv[i] == 0) && (i < NUM_OF_OBSRV - 1))
+		i++;
+
+	if (i >= NUM_OF_OBSRV - 1)
+		return -1;
+	else
+		return i;
+}
+
+/* returns the index of the state with the biggest prob, from the array of indices */
+int getMaxIndexFromIndexArray(int max_states_idx[], int mpi_proc_num, STATE arr[])
+{
+	// finding the maximum from the maximums the slaves found
+	int tmp_idx;
+	int max_idx = max_states_idx[1];
+	for (int i = 2; i < mpi_proc_num; i++)
+	{
+		tmp_idx = max_states_idx[i];
+		if (arr[tmp_idx].prob > arr[max_idx].prob)
+			max_idx = tmp_idx;
+	}
+	return max_idx;
+}
+
+void addMaxToMaxArray(MAX_STATE *max_arr[], int *max_states_num, int max_idx, int obsrv, STATE arr[])
+{
+	(*max_states_num)++;
+	*max_arr = (MAX_STATE*)realloc(*max_arr, (*max_states_num + 1) * sizeof(MAX_STATE));
+	(*max_arr)[*max_states_num - 1].obsrv = obsrv;
+	(*max_arr)[*max_states_num - 1].state_num = max_idx;
+	(*max_arr)[*max_states_num - 1].state = arr[max_idx];
+}
+
+int calcEmission(float emission[], float *ab[], float obsrv)
+{
+	cudaError_t cudaStatus;
+
+	if (WITH_CUDA)
+	{
+		cudaStatus = emissionWithCuda(emission, cuda_emission, cuda_a, cuda_b, obsrv, NUM_OF_STATES);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "ERROR: Calculate emission failed!");
+			return 1;
+		}
+	}
+	else
+	{
+		for (int i = 0; i < NUM_OF_STATES; i++)
+		{
+			emission[i] = emissionFunc(ab[0][i], ab[1][i], obsrv);
+		}
+	}
+
+	return 0;
+}
+
+void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[], 
+	int range[2], bool findMax, int *max_idx)
+{
+	if (findMax)		// signal to also find the maximum
+		*max_idx = 0;
+
+	for (int m = 0; m < state_calc_num; m++)
+	{
+		if (WITH_LOGS)
+			next[m].prob = current[0].prob + trans[0][m + range[0]] + emission[0];
+		else
+			next[m].prob = current[0].prob * trans[0][m + range[0]] * emission[0];
+
+		next[m].parent = 0;
+
+		for (int j = 1; j < NUM_OF_STATES; j++)
+		{
+			float tmp_calc;
+
+			if (WITH_LOGS)
+				tmp_calc = current[j].prob + trans[j][m + range[0]] + emission[j];
+			else
+				tmp_calc = current[j].prob * trans[j][m + range[0]] * emission[j];
+
+			if (tmp_calc > next[m].prob)
+			{
+				next[m].prob = tmp_calc;
+				next[m].parent = j;
+			}
+		}
+
+		if (findMax && next[m].prob > next[*max_idx].prob)
+			*max_idx = m;
+	}
+
+	if (findMax)
+		*max_idx += range[0];
+}
+
+void initStateColumn(STATE *mat[], int i)
+{
+	for (int j = 0; j < NUM_OF_STATES; j++)
+	{
+		if (WITH_LOGS)
+			mat[i][j].prob = 0;		// log(1) = 0
+		else
+			mat[i][j].prob = 1;
+
+		mat[i][j].parent = -1;		// no parent
+	}
 }
 
 int getPathLength(MAX_STATE *arr, int i)
@@ -345,6 +451,44 @@ int* getPath(MAX_STATE *arr, int i, STATE *mat[])
 	}
 
 	return path;
+}
+
+int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission[], 
+	int max_states_idx[], STATE *mat[], MAX_STATE max_states_arr[], STATE current[], STATE next[])
+{
+	cudaError_t cudaStatus;
+
+	freeMatrix(trans, NUM_OF_STATES);
+	freeMatrix(ab, 2);
+	free(obsrv);
+	free(emission);
+	free(max_states_idx);
+
+	if (rank == 0)
+	{
+		freeMatrix(mat, NUM_OF_OBSRV);
+		free(max_states_arr);
+
+		if (WITH_CUDA)
+		{
+			freeCuda(cuda_emission, cuda_a, cuda_b);
+
+			cudaStatus = cudaDeviceReset();
+			if (cudaStatus != cudaSuccess)
+			{
+				fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
+				return 1;
+			}
+		}
+
+	}
+	else
+	{
+		free(current);
+		free(next);
+	}
+
+	return 0;
 }
 
 void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
@@ -379,10 +523,9 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 
 int main(int argc, char* argv[])
 {
-	int			range[2], state_calc_num;
+	int			range[2], state_calc_num, action_flag;
 	int			rank, mpi_proc_num, max_idx = 0, *max_states_idx;
 	float		**trans, **ab, *obsrv, *emission;
-	float		*cuda_emission, *cuda_a, *cuda_b;		// pointers to memory in GPU
 	STATE		**mat, *current, *next;
 	MAX_STATE	*max_states_arr;
 
@@ -392,7 +535,6 @@ int main(int argc, char* argv[])
 	int				blocklen[2] = { 1, 1 };
 
 	MPI_Status	status;
-	cudaError_t cudaStatus;
 
 
 	MPI_Init(&argc, &argv);
@@ -422,6 +564,7 @@ int main(int argc, char* argv[])
 	/* initialize random seed: */
 	srand((unsigned int)time(NULL));
 
+	// allocate space
 	trans			= allocateFloatMatrix(NUM_OF_STATES, NUM_OF_STATES);
 	ab				= allocateFloatMatrix(2, NUM_OF_STATES);
 	obsrv			= (float*)calloc(NUM_OF_OBSRV, sizeof(float));
@@ -432,6 +575,7 @@ int main(int argc, char* argv[])
 	///////////////////////////////////////////////////////////
 
 
+	// initialize values
 	if (rank == 0)
 	{
 		if (TEST_VALUES)
@@ -460,10 +604,6 @@ int main(int argc, char* argv[])
 			initCuda(&cuda_a, &cuda_b, &cuda_emission, ab[0], ab[1], NUM_OF_STATES);
 	}
 
-	for (int i = 0; i < NUM_OF_STATES; i++)
-		MPI_Bcast(trans[i], NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-
 
 	///////////////////////////////////////////////////////////
 
@@ -480,50 +620,44 @@ int main(int argc, char* argv[])
 
 		double startTime = MPI_Wtime();								///////////// START TIME
 
-		logMatrixValues(trans, NUM_OF_STATES, NUM_OF_STATES);
+		if (WITH_LOGS)
+			logMatrixValues(trans, NUM_OF_STATES, NUM_OF_STATES);
+
+		// distribute the transition matrix to all the slaves
+		for (int i = 0; i < NUM_OF_STATES; i++)
+			MPI_Bcast(trans[i], NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+		// calc the first emission column
+		int next_index = -1;
+		next_index = getNextIndexToCalc(obsrv, next_index);
+		if (next_index != -1)
+			calcEmission(emission, ab, obsrv[next_index]);
 
 		for (int i = 0; i < NUM_OF_OBSRV; i++)		// loop on time slices (observations)
 		{
 			if (zero_flag)
 			{
-				for (int j = 0; j < NUM_OF_STATES; j++)
-				{
-					if (WITH_LOGS)
-						mat[i][j].prob = 0;		// log(1) = 0
-					else
-						mat[i][j].prob = 1;
-
-					mat[i][j].parent = -1;		// no parent
-				}
-
+				initStateColumn(mat, i);
 				zero_flag = false;
 			}
 
-			MPI_Bcast(mat[i], NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-
 			if ( (obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1) )
 			{
-
-				// calculate i emission
-				if (WITH_CUDA)
-				{
-					cudaStatus = emissionWithCuda(emission, cuda_emission, cuda_a, cuda_b, obsrv[i], NUM_OF_STATES);
-					if (cudaStatus != cudaSuccess)
-					{
-						fprintf(stderr, "ERROR: rank %d , observation %d >> Calculate emission failed!", rank, i);
-						return 1;
-					}
-				}
+				if ((obsrv[i + 1] == 0) || (i == NUM_OF_OBSRV - 2))
+					action_flag = 2;		// signal the slaves to calc next and also find it's max
 				else
-				{
-					for (int j = 0; j < NUM_OF_STATES; j++)
-					{
-						emission[j] = emissionCalc(ab[0][j], ab[1][j], obsrv[i]);
-					}
-				}
+					action_flag = 1;		// normal observation - calc next
+
+				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+				MPI_Bcast(mat[i], NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
+				// calc the next emission column
+				next_index = getNextIndexToCalc(obsrv, next_index);
+				if (next_index != -1)
+					calcEmission(emission, ab, obsrv[next_index]);
 
 				for (int j = 1; j < mpi_proc_num; j++)
 				{
@@ -532,46 +666,24 @@ int main(int argc, char* argv[])
 					MPI_Recv(&mat[i + 1][range[0]], state_calc_num, STATE_MPI_TYPE, j, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 				}
 
-				//state_calc_num = NUM_OF_STATES / mpi_proc_num;
-				//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-
-
 
 			}
 			else		// finding current max state
 			{
 
-				if (i != NUM_OF_OBSRV - 1) 
-					emission[0] = -1;	// signal that obsrvation is zero
+				if (i < NUM_OF_OBSRV - 1) 
+					action_flag = 3;	// signal that obsrvation is zero
 				else
-					emission[0] = -2;	// signal that's the last obsrvation
+					action_flag = 4;	// signal that's the last obsrvation
 
-				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-				//printf("\nrank %d observation %d >> max_states_idx gathered:", rank, i);
-				//printArray(max_states_idx, mpi_proc_num);
-
-
 				// finding the maximum from the maximums the slaves found
-				int tmp_idx;
-				max_idx = max_states_idx[1];
-				for (int j = 2; j < mpi_proc_num; j++)
-				{
-					tmp_idx = max_states_idx[j];
-					if (mat[i][tmp_idx].prob > mat[i][max_idx].prob)
-						max_idx = tmp_idx;
-				}
+				max_idx = getMaxIndexFromIndexArray(max_states_idx, mpi_proc_num, mat[i]);
 
-				max_states_num++;
-				max_states_arr = (MAX_STATE*)realloc(max_states_arr, (max_states_num + 1) * sizeof(MAX_STATE));
-				max_states_arr[max_states_num - 1].obsrv = i;
-				max_states_arr[max_states_num - 1].state_num = max_idx;
-				max_states_arr[max_states_num - 1].state = mat[i][max_idx];
-
-				//printf("\nrank %d observation %d >> max_state #%d , prob = %f\n", rank, i, 
-				//	max_states_arr[max_states_num - 1].state_num, max_states_arr[max_states_num - 1].state.prob);
+				addMaxToMaxArray(&max_states_arr, &max_states_num, max_idx, i, mat[i]);
 
 				zero_flag = true;
 			}
@@ -603,6 +715,11 @@ int main(int argc, char* argv[])
 	}
 	else	///////////////////////		slaves		///////////////////////
 	{
+
+		// receive the transition matrix from master
+		for (int i = 0; i < NUM_OF_STATES; i++)
+			MPI_Bcast(trans[i], NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
 		getRange(range, rank, mpi_proc_num);
 		state_calc_num = range[1] - range[0];
 
@@ -610,71 +727,40 @@ int main(int argc, char* argv[])
 		next = (STATE*)malloc(state_calc_num * sizeof(STATE));
 
 		bool more_calc = true;
+		bool max_idx_updated = false;
 
 		while (more_calc)
 		{
-			MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-			MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
+			
 
-			if (emission[0] != -1 && emission[0] != -2)		// normal observation
+			MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+
+			if (action_flag != 3 && action_flag != 4)		// normal observation
 			{
+				MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 
-				for (int m = 0; m < state_calc_num; m++)
-				{
-					if (WITH_LOGS)
-					{
-						//next[m].prob = current[0].prob + log(trans[0][m + range[0]]) + log(emission[0]);
-						next[m].prob = current[0].prob + trans[0][m + range[0]] + emission[0];
-					}
-					else
-						next[m].prob = current[0].prob * trans[0][m + range[0]] * emission[0];
+				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-					next[m].parent = 0;
+				viterbi(current, next, state_calc_num, trans, emission, range, (action_flag == 2), &max_idx);
 
-					for (int j = 1; j < NUM_OF_STATES; j++)
-					{
-						float tmp_calc;
-
-						if (WITH_LOGS)
-						{
-							//tmp_calc = current[j].prob + log(trans[j][m + range[0]]) + log(emission[j]);
-							tmp_calc = current[j].prob + trans[j][m + range[0]] + emission[j];
-						}
-						else
-							tmp_calc = current[j].prob * trans[j][m + range[0]] * emission[j];
-
-						if (tmp_calc > next[m].prob)
-						{
-							next[m].prob = tmp_calc;
-							next[m].parent = j;
-						}
-					}
-
-				}
+				if (action_flag == 2)
+					max_idx_updated = true;
 
 				MPI_Send(next, state_calc_num, STATE_MPI_TYPE, 0, 0, MPI_COMM_WORLD);
-
-				//MPI_Gather(next, state_calc_num, STATE_MPI_TYPE, mat[i + 1], state_calc_num, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-				
-				//printf("\nrank %d observation %d >> next array\n", rank, i);
-				//printArray(next, state_calc_num);
 
 			}
 			else
 			{
-				max_idx = range[0];
 
-				for (int j = range[0] + 1; j < range[1]; j++)
-				{
-					if (current[j].prob > current[max_idx].prob)
-						max_idx = j;
-				}
-
-				//printf("\nrank %d Observation %d >> sending max: %f , index: %d\n", rank, i, current[max_idx].prob, max_idx);
-
+				if (!max_idx_updated)		// mean we had two zero observations in a row
+					max_idx = 0;
+					
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-				if (emission[0] == -2)
+				max_idx_updated = false;
+
+				if (action_flag == 4)
 					more_calc = false;
 			}
 
@@ -690,35 +776,7 @@ int main(int argc, char* argv[])
 
 
 
-	freeMatrix(trans, NUM_OF_STATES);
-	freeMatrix(ab, 2);
-	free(obsrv);
-	free(emission);
-	free(max_states_idx);
-
-	if (rank == 0)
-	{
-		freeMatrix(mat, NUM_OF_OBSRV);
-		free(max_states_arr);
-		
-		if (WITH_CUDA)
-		{
-			freeCuda(cuda_emission, cuda_a, cuda_b);
-
-			cudaStatus = cudaDeviceReset();
-			if (cudaStatus != cudaSuccess)
-			{
-				fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
-				return 1;
-			}
-		}
-
-	}
-	else
-	{
-		free(current);
-		free(next);
-	}
+	freeAll(rank, trans, ab, obsrv, emission, max_states_idx, mat, max_states_arr, current, next);
 
 	printf("\nrank %d >> DONE\n\n", rank);
 	MPI_Finalize();
