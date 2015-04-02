@@ -1,3 +1,11 @@
+/******************************************
+*******************************************
+***		Ariel Levin						***
+***		ariel.lvn89@gmail.com			***
+***		http://about.me/ariel.levin		***
+*******************************************
+******************************************/
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
@@ -54,32 +62,18 @@ float emissionFunc(float aj, float bj, float oi)
 	return aj * exp(-pow(oi - bj, 2));
 }
 
-/* returns the state with the maximum probability from the array */
-STATE getMaxState(STATE arr[], int size)
-{
-	STATE max = arr[0];
-
-	for (int i = 1; i < size; i++)
-	{
-		if (arr[i].prob > max.prob)
-			max = arr[i];
-	}
-
-	return max;
-}
-
 /* returns the state index with the maximum probability from the array */
-int getMaxStateIndex(STATE arr[], int size)
+int getMaxStateIndex(STATE arr[], int range[2])
 {
-	int max = 0;
+	int max_idx = range[0];
 
-	for (int i = 1; i < size; i++)
+	for (int i = range[0] + 1; i < range[1]; i++)
 	{
-		if (arr[i].prob > arr[max].prob)
-			max = i;
+		if (arr[i].prob > arr[max_idx].prob)
+			max_idx = i;
 	}
 
-	return max;
+	return max_idx;
 }
 
 /* prints the state's given path */
@@ -308,7 +302,7 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	ab[1][0] = 9;	ab[1][1] = 5;	ab[1][2] = 8;
 
 	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
-	//obsrv[0] = 0;	obsrv[1] = 5;	obsrv[2] = 0;	obsrv[3] = 4;	obsrv[4] = 0;
+	//obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 0;	obsrv[4] = 0;
 }
 
 /* returns the next index i in observation array that obsrv[i] is not zero */
@@ -348,6 +342,21 @@ void addMaxToMaxArray(MAX_STATE *max_arr[], int *max_states_num, int max_idx, in
 	(*max_arr)[*max_states_num - 1].state = arr[max_idx];
 }
 
+MPI_Datatype createMpiStateType()
+{
+	MPI_Datatype	STATE_MPI_TYPE;
+	MPI_Datatype	type[2] = { MPI_FLOAT, MPI_INT };
+	MPI_Aint		offset[2];
+	int				blocklen[2] = { 1, 1 };
+
+	offset[0] = offsetof(STATE, prob);
+	offset[1] = offsetof(STATE, parent);
+	MPI_Type_create_struct(2, blocklen, offset, type, &STATE_MPI_TYPE);
+	MPI_Type_commit(&STATE_MPI_TYPE);
+
+	return STATE_MPI_TYPE;
+}
+
 int calcEmission(float emission[], float *ab[], float obsrv)
 {
 	cudaError_t cudaStatus;
@@ -372,11 +381,8 @@ int calcEmission(float emission[], float *ab[], float obsrv)
 	return 0;
 }
 
-void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[],
-	int range[2], bool findMax, int *max_idx)
+void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[], int range[2])
 {
-	if (findMax)		// signal to also find the maximum
-		*max_idx = 0;
 
 #pragma omp parallel for
 	for (int m = 0; m < state_calc_num; m++)
@@ -404,20 +410,12 @@ void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], 
 			}
 		}
 
-#pragma omp critical
-		{
-			if (findMax && next[m].prob > next[*max_idx].prob)
-				*max_idx = m;
-		}
-
 	}
-
-	if (findMax)
-		*max_idx += range[0];
 }
 
 void initStateColumn(STATE *mat[], int i)
 {
+#pragma omp parallel for
 	for (int j = 0; j < NUM_OF_STATES; j++)
 	{
 		if (WITH_LOGS)
@@ -529,18 +527,13 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 
 int main(int argc, char* argv[])
 {
-	int			range[2], state_calc_num, action_flag;
-	int			rank, mpi_proc_num, max_idx = 0, *max_states_idx;
-	float		**trans, **ab, *obsrv, *emission;
-	STATE		**mat, *current, *next;
-	MAX_STATE	*max_states_arr;
-
+	int				range[2], state_calc_num, action_flag;
+	int				rank, mpi_proc_num, max_idx = 0, *max_states_idx;
+	float			**trans, **ab, *obsrv, *emission;
+	STATE			**mat, *current, *next;
+	MAX_STATE		*max_states_arr;
+	MPI_Status		status;
 	MPI_Datatype	STATE_MPI_TYPE;
-	MPI_Datatype	type[2] = { MPI_FLOAT, MPI_INT };
-	MPI_Aint		offset[2];
-	int				blocklen[2] = { 1, 1 };
-
-	MPI_Status	status;
 
 
 	MPI_Init(&argc, &argv);
@@ -561,11 +554,7 @@ int main(int argc, char* argv[])
 		MPI_Abort(MPI_COMM_WORLD, 1);
 	}
 
-	offset[0] = offsetof(STATE, prob);
-	offset[1] = offsetof(STATE, parent);
-	MPI_Type_create_struct(2, blocklen, offset, type, &STATE_MPI_TYPE);
-	MPI_Type_commit(&STATE_MPI_TYPE);
-
+	STATE_MPI_TYPE = createMpiStateType();
 
 	/* initialize random seed: */
 	srand((unsigned int)time(NULL));
@@ -623,7 +612,8 @@ int main(int argc, char* argv[])
 		int max_states_num = 0;
 		bool zero_flag = true;
 
-		double startTime = MPI_Wtime();								///////////// START TIME
+		double omp_start_time = omp_get_wtime();
+		double mpi_start_time = MPI_Wtime();								///////////// START TIME
 
 		if (WITH_LOGS)
 			logMatrixValues(trans, NUM_OF_STATES, NUM_OF_STATES);
@@ -646,16 +636,14 @@ int main(int argc, char* argv[])
 				zero_flag = false;
 			}
 
+			// sending the current observation's states array
+			MPI_Bcast(mat[i], NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
+
 			if ((obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1))		// normal observation
 			{
-				if ((obsrv[i + 1] == 0) || (i == NUM_OF_OBSRV - 2))
-					action_flag = 2;		// signal the slaves to calc next and also find it's max
-				else
-					action_flag = 1;		// normal observation - calc next
+				action_flag = 1;		// normal observation - calc next
 
 				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-				MPI_Bcast(mat[i], NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
 
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
@@ -674,11 +662,10 @@ int main(int argc, char* argv[])
 			}
 			else		// finding current max state
 			{
-
-				if (i < NUM_OF_OBSRV - 1)
-					action_flag = 3;		// signal that obsrvation is zero
+				if (i == NUM_OF_OBSRV - 1)
+					action_flag = 3;		// signal that's the last obsrvation
 				else
-					action_flag = 4;		// signal that's the last obsrvation
+					action_flag = 2;		// signal that obsrvation is zero
 
 				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -711,8 +698,10 @@ int main(int argc, char* argv[])
 
 		printAllMaxStates(mat, max_states_arr, max_states_num);
 
-		double endTime = MPI_Wtime();								///////////// END TIME
-		printf("\n\nMPI measured time: %lf\n\n", endTime - startTime);
+		double mpi_end_time = MPI_Wtime();								///////////// END TIME
+		double omp_end_time = omp_get_wtime();
+		printf("\n\nMPI measured time: %lf\n", mpi_end_time - mpi_start_time);
+		printf("\nOpenMP measured time: %lf\n\n", omp_end_time - omp_start_time);
 
 
 	}
@@ -730,38 +719,28 @@ int main(int argc, char* argv[])
 		next = (STATE*)malloc(state_calc_num * sizeof(STATE));
 
 		bool more_calc = true;
-		bool max_idx_updated = false;
 
 		while (more_calc)
 		{
+			MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
+
 			MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-			if (action_flag != 3 && action_flag != 4)		// normal observation
+			if (action_flag == 1)		// normal observation
 			{
-				MPI_Bcast(current, NUM_OF_STATES, STATE_MPI_TYPE, 0, MPI_COMM_WORLD);
-
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-				bool findMax = (action_flag == 2);
-
-				viterbi(current, next, state_calc_num, trans, emission, range, findMax, &max_idx);
-
-				if (findMax)
-					max_idx_updated = true;
+				viterbi(current, next, state_calc_num, trans, emission, range);
 
 				MPI_Send(next, state_calc_num, STATE_MPI_TYPE, 0, 0, MPI_COMM_WORLD);
-
 			}
 			else
 			{
-				if (!max_idx_updated)		// mean we had two zero observations in a row
-					max_idx = 0;
+				max_idx = getMaxStateIndex(current, range);
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-				max_idx_updated = false;
-
-				if (action_flag == 4)
+				if (action_flag == 3)
 					more_calc = false;
 			}
 
