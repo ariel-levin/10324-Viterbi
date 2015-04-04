@@ -25,9 +25,10 @@ using namespace std;
 #define NUM_OF_OBSRV 30000			// number of time slices, default: 30000
 
 
+static const bool	TEST_VALUES = false;
 static const bool	GENERATE_ZEROES = true;
 static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	TEST_VALUES = false;
+static const bool	NORMALIZE_TRANS = true;
 static const bool	WITH_LOGS = true;
 static const bool	WITH_CUDA = true;
 static const bool	PRINT_STATUS = false;
@@ -578,10 +579,12 @@ int main(int argc, char* argv[])
 		else
 		{
 			generateMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
-			normalizeMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
 			generateMatrix(ab, 2, NUM_OF_STATES);
 			generateArray(obsrv, NUM_OF_OBSRV);
 		}
+
+		if (NORMALIZE_TRANS)
+			normalizeMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
 
 		if (NUM_OF_STATES <= 10 && NUM_OF_OBSRV <= 10)
 		{

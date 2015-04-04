@@ -18,15 +18,17 @@ cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda
 void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
 
 
-__global__ void emissionKernel(float emission[], float a[], float b[], float obsrv, bool withLog)
+__global__ void emissionKernel(float emission[], float a[], float b[], float obsrv, int N, bool withLog)
 {
-	//int i = threadIdx.x;
 	int i = blockDim.x * blockIdx.x + threadIdx.x;
 
-	if (withLog)
-		emission[i] = log(a[i] * exp(-pow(obsrv - b[i], 2)));
-	else
-		emission[i] = a[i] * exp(-pow(obsrv - b[i], 2));
+	if (i < N)
+	{
+		if (withLog)
+			emission[i] = log(a[i] * exp(-pow(obsrv - b[i], 2)));
+		else
+			emission[i] = a[i] * exp(-pow(obsrv - b[i], 2));
+	}
 }
 
 
@@ -98,7 +100,7 @@ cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda
 	// Invoke kernel 
 	int threadsPerBlock = 1024;
 	int blocksPerGrid = (num_of_states + threadsPerBlock - 1) / threadsPerBlock;
-	emissionKernel << < blocksPerGrid, threadsPerBlock >> >(cuda_emission, cuda_a, cuda_b, obsrv, withLog);
+	emissionKernel << < blocksPerGrid, threadsPerBlock >> >(cuda_emission, cuda_a, cuda_b, obsrv, num_of_states, withLog);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
