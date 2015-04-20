@@ -6,6 +6,8 @@
 *******************************************
 ******************************************/
 
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
@@ -21,17 +23,24 @@
 
 using namespace std;
 
-#define NUM_OF_STATES 1000			// number of states, default: 1000
-#define NUM_OF_OBSRV 30000			// number of time slices, default: 30000
+#define NUM_OF_STATES	1000			// number of states, default: 1000
+#define NUM_OF_OBSRV	30000			// number of time slices, default: 30000
+
+#define FILE_PATH	"C:\\Users\\Ariel\\workspace\\afeka\\2015a\\10324-parallel\\Project\\Project\\Files\\"
 
 
+// initialize consts
 static const bool	TEST_VALUES = false;
-static const bool	GENERATE_ZEROES = true;
-static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;
-static const bool	NORMALIZE_TRANS = true;
+static const bool	WITH_FILES = true;
+static const bool	GENERATE_ZEROES = false;
+static const int	MAX_ZERO_RANGE = NUM_OF_OBSRV / 2;		// how often to generate zeros (if using random values)
+static const bool	NORMALIZE_TRANS = false;
+
+// how to calc consts
 static const bool	WITH_LOGS = true;
 static const bool	WITH_CUDA = true;
-static const bool	PRINT_STATUS = false;
+static const bool	PRINT_OBSRV = false;
+
 
 float	*cuda_emission, *cuda_a, *cuda_b;		// pointers to memory in GPU
 
@@ -99,6 +108,20 @@ void printPath(int path[], int len)
 	printf("\n");
 }
 
+void outputPathToFile(int path[], int len, FILE *f)
+{
+	fprintf(f, "Path: ");
+
+	for (int i = 0; i < len; i++)
+	{
+		fprintf(f, "%d", path[i]);
+		if (i < len - 1)
+			fprintf(f, " -> ");
+	}
+
+	fprintf(f, "\n");
+}
+
 /* prints STATES array */
 void printArray(STATE arr[], int size)
 {
@@ -150,6 +173,24 @@ void generateArray(float arr[], int size)
 	}
 }
 
+bool loadArrayFromFile(float arr[], int size, char fpath[])
+{
+	FILE* f = fopen(fpath, "r+");
+	if (f == NULL)
+	{
+		printf("\nFailed opening the file..\n");
+		return false;
+	}
+
+	for (int i = 0; i < size; i++)
+	{
+		fscanf(f, "%f", &arr[i]);
+	}
+
+	fclose(f);
+	return true;
+}
+
 /* copy values from int array a to array b, from index 'start' to 'end' */
 void copyArray(int a[], int b[], int start, int end)
 {
@@ -195,6 +236,27 @@ void generateMatrix(float *mat[], int rows, int cols)
 			mat[i][j] = (float)rand() / RAND_MAX;
 		}
 	}
+}
+
+bool loadMatrixFromFile(float *mat[], int rows, int cols, char fpath[])
+{
+	FILE* f = fopen(fpath, "r+");
+	if (f == NULL)
+	{
+		printf("\nFailed opening the file..\n");
+		return false;
+	}
+
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			fscanf(f, "%f", &mat[i][j]);
+		}
+	}
+
+	fclose(f);
+	return true;
 }
 
 /* prints matrix with number of rows and cols received */
@@ -463,34 +525,37 @@ int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission
 {
 	cudaError_t cudaStatus;
 
-	freeMatrix(trans, NUM_OF_STATES);
-	freeMatrix(ab, 2);
-	free(obsrv);
-	free(emission);
-	free(max_states_idx);
+	try { freeMatrix(trans, NUM_OF_STATES); } catch (...) {}
+	try { freeMatrix(ab, 2); } catch (...) {}
+	try { free(obsrv); } catch (...) {}
+	try { free(emission); } catch (...) {}
+	try { free(max_states_idx); } catch (...) {}
 
 	if (rank == 0)
 	{
-		freeMatrix(mat, NUM_OF_OBSRV);
-		free(max_states_arr);
+		try { freeMatrix(mat, NUM_OF_OBSRV); } catch (...) {}
+		try { free(max_states_arr); } catch (...) {}
 
 		if (WITH_CUDA)
 		{
-			freeCuda(cuda_emission, cuda_a, cuda_b);
+			try {
+				freeCuda(cuda_emission, cuda_a, cuda_b);
 
-			cudaStatus = cudaDeviceReset();
-			if (cudaStatus != cudaSuccess)
-			{
-				fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
-				return 1;
+				cudaStatus = cudaDeviceReset();
+				if (cudaStatus != cudaSuccess)
+				{
+					fprintf(stderr, "ERROR: rank %d >> cudaDeviceReset failed!", rank);
+					return 1;
+				}
 			}
+			catch (...) {}
 		}
 
 	}
 	else
 	{
-		free(current);
-		free(next);
+		try { free(current); } catch (...) {}
+		try { free(next); } catch (...) {}
 	}
 
 	return 0;
@@ -512,11 +577,48 @@ void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
 		else
 			printf("State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
 
-
 		int *path = getPath(arr, i, mat);
 		printPath(path, getPathLength(arr, i));
 		free(path);
 	}
+}
+
+void clearOutputFiles()
+{
+	system("IF EXIST "FILE_PATH"Max_States_Result.txt del /q /f "FILE_PATH"Max_States_Result.txt");
+}
+
+void fileOutputAllMaxStates(STATE *mat[], MAX_STATE *arr, int size)
+{
+	clearOutputFiles();
+
+	FILE* f = fopen(FILE_PATH"Max_States_Result.txt", "w+");
+	if (f == NULL)
+	{
+		printf("\nFailed opening the file..\n");
+		return;
+	}
+
+	for (int i = 0; i < size; i++)
+	{
+		STATE max_state = arr[i].state;
+		fprintf(f, "\nMax State #%d - Observation %d:\n", i + 1, arr[i].obsrv);
+		if (WITH_LOGS)
+		{
+			if (exp(max_state.prob) != 0)
+				fprintf(f, "State %d >> Final Prob = %e\n", arr[i].state_num, exp(max_state.prob));
+			else
+				fprintf(f, "State %d >> Final Prob (log) = %e\n", arr[i].state_num, max_state.prob);
+		}
+		else
+			fprintf(f, "State %d >> Final Prob = %e\n", arr[i].state_num, max_state.prob);
+
+		int *path = getPath(arr, i, mat);
+		outputPathToFile(path, getPathLength(arr, i), f);
+		free(path);
+	}
+
+	fclose(f);
 }
 
 
@@ -575,7 +677,21 @@ int main(int argc, char* argv[])
 	if (rank == 0)
 	{
 		if (TEST_VALUES)
+		{
 			testValues(trans, ab, obsrv);
+		}
+		else if (WITH_FILES)
+		{
+			bool success1 = loadMatrixFromFile(trans, NUM_OF_STATES, NUM_OF_STATES, FILE_PATH"Transition.txt");
+			bool success2 = loadMatrixFromFile(ab, 2, NUM_OF_STATES, FILE_PATH"AB.txt");
+			bool success3 = loadArrayFromFile(obsrv, NUM_OF_OBSRV, FILE_PATH"Observation.txt");
+			if (!success1 || !success2 || !success3)
+			{
+				cout << "\nERROR: couldn't load files properly..\n";
+				fflush(stdout);
+				MPI_Abort(MPI_COMM_WORLD, 1);
+			}
+		}
 		else
 		{
 			generateMatrix(trans, NUM_OF_STATES, NUM_OF_STATES);
@@ -689,20 +805,22 @@ int main(int argc, char* argv[])
 				printMatrix(mat, i + 1, NUM_OF_STATES);
 			}
 
-			if (PRINT_STATUS)
+			if (PRINT_OBSRV)
 			{
-				//system("cls");
-				//cout << (int)(((float)(i + 1) / NUM_OF_OBSRV) * 100) << "%";
 				cout << i << "\n";
 				fflush(stdout);
 			}
 
 		}
 
-		printAllMaxStates(mat, max_states_arr, max_states_num);
-
 		double mpi_end_time = MPI_Wtime();								///////////// END TIME
 		double omp_end_time = omp_get_wtime();
+
+		if (WITH_FILES)
+			fileOutputAllMaxStates(mat, max_states_arr, max_states_num);
+		else
+			printAllMaxStates(mat, max_states_arr, max_states_num);
+
 		printf("\n\nMPI measured time: %lf\n", mpi_end_time - mpi_start_time);
 		printf("\nOpenMP measured time: %lf\n\n", omp_end_time - omp_start_time);
 
