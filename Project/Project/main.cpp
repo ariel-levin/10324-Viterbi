@@ -238,7 +238,7 @@ void generateMatrix(float *mat[], int rows, int cols)
 	}
 }
 
-bool loadMatrixFromFile(float *mat[], int rows, int cols, char fpath[])
+bool loadMatrixFromFile(float *mat[], int rows, int cols, char fpath[], bool load_transposed)
 {
 	FILE* f = fopen(fpath, "r+");
 	if (f == NULL)
@@ -247,11 +247,24 @@ bool loadMatrixFromFile(float *mat[], int rows, int cols, char fpath[])
 		return false;
 	}
 
-	for (int i = 0; i < rows; i++)
+	if (load_transposed)
 	{
-		for (int j = 0; j < cols; j++)
+		for (int i = 0; i < cols; i++)
 		{
-			fscanf(f, "%f", &mat[i][j]);
+			for (int j = 0; j < rows; j++)
+			{
+				fscanf(f, "%f", &mat[j][i]);
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				fscanf(f, "%f", &mat[i][j]);
+			}
 		}
 	}
 
@@ -682,8 +695,8 @@ int main(int argc, char* argv[])
 		}
 		else if (WITH_FILES)
 		{
-			bool success1 = loadMatrixFromFile(trans, NUM_OF_STATES, NUM_OF_STATES, FILE_PATH"Transition.txt");
-			bool success2 = loadMatrixFromFile(ab, 2, NUM_OF_STATES, FILE_PATH"AB.txt");
+			bool success1 = loadMatrixFromFile(trans, NUM_OF_STATES, NUM_OF_STATES, FILE_PATH"Transition.txt", false);
+			bool success2 = loadMatrixFromFile(ab, 2, NUM_OF_STATES, FILE_PATH"AB.txt", true);
 			bool success3 = loadArrayFromFile(obsrv, NUM_OF_OBSRV, FILE_PATH"Observation.txt");
 			if (!success1 || !success2 || !success3)
 			{
