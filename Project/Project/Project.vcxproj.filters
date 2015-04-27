@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CudaCompile Include="kernel.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="array.cpp">
+      <Filter>Functions Files</Filter>
+    </ClCompile>
+    <ClCompile Include="file.cpp">
+      <Filter>Functions Files</Filter>
+    </ClCompile>
+    <ClCompile Include="matrix.cpp">
+      <Filter>Functions Files</Filter>
+    </ClCompile>
+    <ClCompile Include="print.cpp">
+      <Filter>Functions Files</Filter>
+    </ClCompile>
+    <ClCompile Include="general.cpp">
+      <Filter>Functions Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Headers">
+      <UniqueIdentifier>{a45183ef-ba1f-4e54-970b-574563955faa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Functions Files">
+      <UniqueIdentifier>{be2b6c9f-1939-4275-864a-49dcbfe09c82}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="global.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
