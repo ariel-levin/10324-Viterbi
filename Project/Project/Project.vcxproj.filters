@@ -17,7 +17,7 @@
     <ClCompile Include="print.cpp">
       <Filter>Functions Files</Filter>
     </ClCompile>
-    <ClCompile Include="general.cpp">
+    <ClCompile Include="viterbi.cpp">
       <Filter>Functions Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -31,6 +31,24 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="global.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="array.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="file.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="matrix.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="print.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="viterbi.h">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>

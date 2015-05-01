@@ -6,7 +6,12 @@
 *******************************************
 ******************************************/
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+#include <math.h>
 #include "global.h"
+#include "matrix.h"
 
 
 /* allocate space and returns doubles matrix with number of rows and cols received */

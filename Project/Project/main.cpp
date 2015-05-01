@@ -6,7 +6,17 @@
 *******************************************
 ******************************************/
 
+#include <stdio.h>
+#include <time.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <omp.h>
 #include "global.h"
+#include "viterbi.h"
+#include "matrix.h"
+#include "file.h"
+#include "print.h"
+#include "iostream"
 
 using namespace std;
 

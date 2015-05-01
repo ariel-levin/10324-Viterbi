@@ -6,7 +6,11 @@
 *******************************************
 ******************************************/
 
+#include <stdio.h>
+#include <time.h>
+#include <stdlib.h>
 #include "global.h"
+#include "array.h"
 
 
 /* prints STATES array */

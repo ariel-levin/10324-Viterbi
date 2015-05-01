@@ -10,13 +10,8 @@
 #include "device_launch_parameters.h"
 #include <stdio.h>
 #include <math.h>
-
-
-cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[], unsigned int num_of_states);
-cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], float obsrv, unsigned int num_of_states);
-void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
-
-bool	WITH_LOGS;
+#include "global.h"
+#include "cuda.h"
 
 
 __global__ void emissionKernel(float emission[], float a[], float b[], float obsrv, int N, bool withLog)
@@ -34,7 +29,8 @@ __global__ void emissionKernel(float emission[], float a[], float b[], float obs
 
 
 // Helper function for using CUDA to calculate the emission function
-cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], float obsrv, unsigned int num_of_states)
+cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[], 
+	float obsrv, unsigned int num_of_states)
 {
 	cudaError_t cudaStatus;
 
@@ -72,14 +68,12 @@ cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda
 }
 
 cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[],
-	unsigned int num_of_states, bool withLog)
+	unsigned int num_of_states)
 {
 	cudaError_t cudaStatus;
 	*cuda_a = 0;
 	*cuda_b = 0;
 	*cuda_emission = 0;
-
-	WITH_LOGS = withLog;
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
 	cudaStatus = cudaSetDevice(0);

@@ -8,7 +8,12 @@
 
 #define _CRT_SECURE_NO_DEPRECATE
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include "global.h"
+#include "file.h"
+#include "viterbi.h"
 
 
 void outputPathToFile(int path[], int len, FILE *f)

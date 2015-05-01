@@ -6,24 +6,6 @@
 *******************************************
 ******************************************/
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <math.h>
-#include <string.h>
-#include <string>
-#include <mpi.h>
-#include <omp.h>
-#include "iostream"
-
-
-/***************************************************************************
-****************************	 DEFINES		****************************
-***************************************************************************/
-
-
 #ifndef __MAIN_H
 #define __MAIN_H
 
@@ -33,26 +15,6 @@
 
 
 #define FILE_PATH		"C:\\Users\\Ariel\\workspace\\afeka\\2015a\\10324-parallel\\Project\\Project\\Files\\"
-
-
-typedef struct STATE
-{
-	float	prob;
-	int		parent;
-
-} STATE;
-
-typedef struct MAX_STATE
-{
-	int		obsrv;
-	int		state_num;
-	STATE	state;
-
-} MAX_STATE;
-
-
-#endif	//__MAIN_H
-
 
 
 /***************************************************************************
@@ -74,94 +36,27 @@ static const bool	PRINT_OBSRV = false;					// print observation progress during 
 															// (may slow the process)
 
 
-
 /***************************************************************************
-***************************		DECLARATIONS	****************************
+****************************	 STRUCTS		****************************
 ***************************************************************************/
 
 
-void allocateSpace(float ***trans, float ***ab, float **obsrv, float **emission,
-	int **max_states_idx, int mpi_proc_num);
+typedef struct STATE
+{
+	float	prob;
+	int		parent;
 
-void initializeValues(float **trans, float **ab, float *obsrv, float **cuda_emission, float **cuda_a, float **cuda_b);
+} STATE;
 
-float emissionFunc(float aj, float bj, float oi);
+typedef struct MAX_STATE
+{
+	int		obsrv;
+	int		state_num;
+	STATE	state;
 
-int getMaxStateIndex(STATE arr[], int range[2]);
+} MAX_STATE;
 
-void getRange(int range[], int rank, int mpi_proc_num);
 
-void testValues(float *trans[], float *ab[], float obsrv[]);
 
-int getNextIndexToCalc(float obsrv[], int current);
-
-int getMaxIndexFromIndexArray(int max_states_idx[], int mpi_proc_num, STATE arr[]);
-
-void addMaxToMaxArray(MAX_STATE *max_arr[], int *max_states_num, int max_idx, int obsrv, STATE arr[]);
-
-MPI_Datatype createMpiStateType();
-
-int calcEmission(float emission[], float *ab[], float obsrv, float *cuda_emission, float *cuda_a, float *cuda_b);
-
-void viterbi(STATE current[], STATE next[], int state_calc_num, float *trans[], float emission[], int range[2]);
-
-void initStateColumn(STATE *mat[], int i);
-
-int getPathLength(MAX_STATE *arr, int i);
-
-int* getPath(MAX_STATE *arr, int i, STATE *mat[]);
-
-int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission[],
-	int max_states_idx[], STATE *mat[], MAX_STATE max_states_arr[], STATE current[], STATE next[],
-	float *cuda_emission, float *cuda_a, float *cuda_b);
-
-void printPath(int path[], int len);
-
-void printAllMaxStates(STATE *mat[], MAX_STATE *arr, int size);
-
-void printArray(STATE arr[], int size);
-
-void printArray(float arr[], int size);
-
-void printArray(int arr[], int size);
-
-void generateArray(float arr[], int size);
-
-void copyArray(int a[], int b[], int start, int end);
-
-float** allocateFloatMatrix(int rows, int cols);
-
-STATE** allocateStateMatrix(int rows, int cols);
-
-void generateMatrix(float *mat[], int rows, int cols);
-
-void printMatrix(float *mat[], int rows, int cols);
-
-void printMatrix(STATE *mat[], int rows, int cols);
-
-void freeMatrix(float *mat[], int rows);
-
-void freeMatrix(STATE *mat[], int rows);
-
-void normalizeMatrix(float *mat[], int rows, int cols);
-
-void logMatrixValues(float *mat[], int rows, int cols);
-
-cudaError_t initCuda(float **cuda_a, float **cuda_b, float **cuda_emission, float a[], float b[],
-	unsigned int num_of_states, bool withLog);
-
-cudaError_t emissionWithCuda(float emission[], float cuda_emission[], float cuda_a[], float cuda_b[],
-	float obsrv, unsigned int num_of_states);
-
-void freeCuda(float cuda_emission[], float cuda_a[], float cuda_b[]);
-
-void outputPathToFile(int path[], int len, FILE *f);
-
-bool loadArrayFromFile(float arr[], int size, char fpath[]);
-
-bool loadMatrixFromFile(float *mat[], int rows, int cols, char fpath[], bool load_transposed);
-
-void clearOutputFiles();
-
-void fileOutputAllMaxStates(STATE *mat[], MAX_STATE *arr, int size);
+#endif	//__MAIN_H
 
