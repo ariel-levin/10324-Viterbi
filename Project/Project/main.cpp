@@ -28,9 +28,10 @@ using namespace std;
 
 int main(int argc, char* argv[])
 {
-	int				range[2], state_calc_num, action_flag;
+	int				range[2], state_calc_num;
 	int				rank, mpi_proc_num, max_idx = 0, *max_states_idx;
 	float			**trans, **ab, *obsrv, *emission;
+	flag			action_flag;
 	STATE			**mat, *current, *next;
 	MAX_STATE		*max_states_arr;
 	MPI_Status		status;
@@ -111,7 +112,7 @@ int main(int argc, char* argv[])
 
 			if ((obsrv[i] != 0) && (i < NUM_OF_OBSRV - 1))		// normal observation
 			{
-				action_flag = 1;		// normal observation - calc next
+				action_flag = NORMAL;		// normal observation - calc next
 
 				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -133,9 +134,9 @@ int main(int argc, char* argv[])
 			else		// finding current max state
 			{
 				if (i == NUM_OF_OBSRV - 1)
-					action_flag = 3;		// signal that's the last obsrvation
+					action_flag = LAST;		// signal that's the last obsrvation
 				else
-					action_flag = 2;		// signal that obsrvation is zero
+					action_flag = ZERO;		// signal that obsrvation is zero
 
 				MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -191,7 +192,7 @@ int main(int argc, char* argv[])
 
 			MPI_Bcast(&action_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-			if (action_flag == 1)		// normal observation
+			if (action_flag == NORMAL)		// normal observation
 			{
 				MPI_Bcast(emission, NUM_OF_STATES, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
@@ -205,7 +206,7 @@ int main(int argc, char* argv[])
 
 				MPI_Gather(&max_idx, 1, MPI_INT, max_states_idx, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-				if (action_flag == 3)
+				if (action_flag == LAST)
 					more_calc = false;
 			}
 

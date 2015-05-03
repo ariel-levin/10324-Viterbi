@@ -57,6 +57,9 @@ typedef struct MAX_STATE
 } MAX_STATE;
 
 
+typedef enum { NORMAL, ZERO, LAST } flag;
+
+
 
 #endif	//__MAIN_H
 

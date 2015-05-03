@@ -257,7 +257,7 @@ void testValues(float *trans[], float *ab[], float obsrv[])
 	ab[1][0] = 9;	ab[1][1] = 5;	ab[1][2] = 8;
 
 	obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 4;	obsrv[4] = 5;
-	//obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 10;	obsrv[3] = 0;	obsrv[4] = 0;
+	//obsrv[0] = 5;	obsrv[1] = 5;	obsrv[2] = 0;	obsrv[3] = 4;	obsrv[4] = 5;
 }
 
 int freeAll(int rank, float *trans[], float *ab[], float obsrv[], float emission[],
